@@ -1,104 +1,164 @@
 # Odoo + Razorpay Integration Guide for Bodhih.com
 
 ## Overview
-This guide explains how to configure Razorpay in Odoo 18.4 to automatically pass product details to the webhook. **No Odoo code changes needed!**
+This guide explains how to integrate the webhook with your Odoo 18.4 SAAS. Since Odoo SAAS doesn't expose custom field mapping in the Razorpay configuration, we use a simple approach: **pass product details via the Description field**.
+
+---
 
 ## How It Works
 
 ```
-Customer Makes Payment → Razorpay Captures Payment → Sends to Webhook
-                                                        ↓
-Webhook reads product details from Razorpay notes → Routes to DISC or Harrason → Sends email
+Odoo Sale Order
+    ↓
+    Add product name in Description
+    ↓
+Complete Razorpay Payment
+    ↓
+Razorpay sends description to webhook
+    ↓
+Webhook detects assessment type (DISC or Harrason)
+    ↓
+Routes to correct API & sends confirmation email
 ```
 
-## Configuration Steps
+---
 
-### Step 1: Go to Razorpay Payment Gateway Settings
-1. In Odoo, go to **Accounting** → **Configuration** → **Payment Methods**
-2. Find **Razorpay** payment method
-3. Click to edit it
+## Step 1: Configure Razorpay in Odoo
 
-### Step 2: Add Custom Payment Metadata
-In the payment gateway configuration, add these fields to the **Notes/Metadata** section:
+1. Go to **Accounting** → **Configuration** → **Payment Providers** → **Razorpay**
+2. Click **Credentials** tab and verify your Account ID is set
+3. That's it! No custom field mapping needed.
 
-```python
-# Add to Razorpay notes when creating payment
-{
-    "product_id": "PRODUCT_ID",
-    "product_name": "PRODUCT_NAME", 
-    "product_type": "disc",  # or "harrason"
-    "name": "CUSTOMER_NAME",
-    "user_email": "CUSTOMER_EMAIL",
-    "gender": "Male"  # or "Female"
-}
-```
+---
 
-### Step 3: Map Odoo Fields to Razorpay Notes
+## Step 2: Create Sale Orders with Product Details
 
-You need to configure Razorpay to extract these values from the Sale Order:
+### For DISC Assessments:
 
-- **product_id**: From `order_line[0].product_id.id`
-- **product_name**: From `order_line[0].product_id.name`
-- **product_type**: Determine based on product name:
-  - If product name contains "DISC" → set to "disc"
-  - If product name contains "Harrason" → set to "harrason"
-- **name**: From `partner_id.name`
-- **user_email**: From `partner_id.email`
-- **gender**: From custom field (or skip to use Razorpay's auto-detection)
+When creating a sale order in Odoo:
 
-### Step 4: Example Product Setup in Odoo
+1. **Select Product**: DISC Asia+ Basic Report (or any DISC product)
+2. **Customer**: Add the customer details (name, email)
+3. **Description Field**: Enter the assessment name
 
-Make sure your products are named clearly:
+   Examples:
+   ```
+   DISC Asia+ Basic Report
+   DISC Self-Awareness Advanced Report
+   DISC Leadership Quick Assessment
+   ```
 
-**For DISC Assessment:**
-- Product Name: `DISC Asia+ Basic Report`
-- Product Name: `DISC Asia+ Advanced Self-Awareness Report`
+4. **Confirm & Process Payment** through Razorpay
 
-**For Harrason Assessment:**
-- Product Name: `Harrason Leadership Assessment`
-- Product Name: `Harrason Team Dynamics Report`
+### For Harrason Assessments:
 
-The webhook will automatically detect "disc" or "harrason" keywords.
+1. **Select Product**: Harrason Assessment (or any Harrason product)
+2. **Customer**: Add the customer details
+3. **Description Field**: Enter the assessment name
 
-### Step 5: Test the Integration
+   Examples:
+   ```
+   Harrason Leadership Assessment
+   Harrason Team Dynamics Assessment
+   Harrason Executive Coaching Program
+   ```
 
-Create a test sale order with:
-- Product: DISC Assessment
-- Customer: Test customer email
-- Payment: Complete the Razorpay payment
+4. **Confirm & Process Payment** through Razorpay
 
-**Check the webhook logs** to verify:
-```
-NEW PAYMENT FROM ODOO WEBSITE — BODHIH.COM
-Product Name: DISC Asia+ Basic Report
-Product Type: disc
-Router to: DISC ASIA+
-```
+---
+
+## Step 3: What Happens Next
+
+Once payment is confirmed through Razorpay:
+
+1. **Webhook receives payment confirmation**
+2. **Webhook extracts description** (product name)
+3. **Webhook detects keywords**:
+   - If description contains "disc" → Uses DISC Asia+ API
+   - If description contains "harrason" → Uses Harrason API
+4. **Webhook registers customer** on assessment platform
+5. **Webhook sends email** with:
+   - Login credentials
+   - Assessment link
+   - Payment confirmation
+
+---
+
+## Important: Product Naming
+
+Make sure your **product names clearly indicate the assessment type**:
+
+✅ GOOD:
+- "DISC Asia+ Basic Report"
+- "DISC Self-Awareness Advanced"
+- "Harrason Leadership Assessment"
+- "Harrason Team Building Program"
+
+❌ AVOID:
+- "Assessment 1" (no keywords)
+- "Product A" (confusing)
+- "Report" (too generic)
+
+---
+
+## Testing
+
+### To Test the Integration:
+
+1. Create a **test sale order** with:
+   - Product: DISC Asia+ Basic Report
+   - Customer: Your test email
+   - Description: "DISC Asia+ Basic Report"
+
+2. **Complete the payment** using Razorpay test mode
+
+3. **Check webhook logs** in Replit to see:
+   ```
+   NEW PAYMENT FROM ODOO WEBSITE — BODHIH.COM
+   Description: DISC Asia+ Basic Report
+   Report Type: DISC Asia+ Basic
+   Router to: DISC ASIA+
+   ```
+
+4. **Verify email sent** to your test email address
+
+---
+
+## Troubleshooting
+
+### Email Not Received?
+- Check email is correct in Odoo customer record
+- Verify SMTP settings in Replit are correct
+- Check spam/promotions folder in Gmail
+
+### Wrong Assessment Type Detected?
+- Check product name has "disc" or "harrason" keyword
+- Make sure description field is filled in sale order
+- Check webhook logs for the exact product name received
+
+### Payment Not Processed?
+- Verify Razorpay is enabled in Odoo
+- Check payment status in Razorpay dashboard
+- Verify webhook URL is set correctly in Razorpay
+
+---
 
 ## Webhook URL
 
-Configure Razorpay webhook to send to:
+When setting up Razorpay webhooks (if needed), use:
 ```
 https://your-replit-url.repl.co/razorpay-webhook
 ```
 
-Events to listen for:
-- `payment.captured` (when payment is successfully completed)
+Event to listen for: `payment.captured`
 
-## Troubleshooting
-
-### Payment Received but No Email Sent
-- Check webhook logs for errors
-- Verify DISC_CREDENTIAL and SMTP credentials are set
-- Verify product name contains "disc" or "harrason" keywords
-
-### Wrong Assessment Type Detected
-- Check product name in Odoo - add clear keywords ("DISC" or "Harrason")
-- Verify product_type in Razorpay notes is correct
-
-### Customer Email Missing
-- Ensure customer contact has email address
-- Verify "user_email" is passed in Razorpay notes
+---
 
 ## Support
-If you encounter issues, check the webhook logs in Replit for detailed error messages.
+
+For issues:
+1. Check webhook logs in Replit project
+2. Verify product names contain clear keywords
+3. Ensure SMTP credentials are correct
+
+Your webhook is production-ready! 🚀
