@@ -4,7 +4,7 @@
 This Flask-based webhook server automates the payment processing workflow for Bodhih Training Solutions. When a customer makes a payment through Razorpay (integrated with Odoo), the webhook:
 
 1. Receives payment confirmation from Razorpay
-2. Extracts customer and product details
+2. Extracts product details from Razorpay notes field
 3. Routes to the appropriate assessment API based on product type:
    - **DISC Asia+** for DISC assessments
    - **Harrason** for Harrason assessments
@@ -12,76 +12,105 @@ This Flask-based webhook server automates the payment processing workflow for Bo
 5. Sends a confirmation email with login credentials and assessment link
 
 ## Recent Changes (November 25, 2025)
-- **Added Product-Based Routing**: The webhook now extracts product details (product_id, product_name, product_type) from the Razorpay notes field
-- **Harrason API Integration**: Added support for Harrason assessment API alongside DISC Asia+
-- **Enhanced Logging**: Improved logging to show all product details, order info, payment method, and raw payload snippet
-- **Security Improvements**: Moved hardcoded credentials to environment variables/secrets
-- **Flexible Routing Logic**: Automatically routes to DISC or Harrason based on product name/type keywords
+- **Simplified Architecture**: Removed Odoo API dependency - now reads product details directly from Razorpay notes (passed by Odoo)
+- **Configuration-Based Integration**: No code changes needed in Odoo - just configure Razorpay to pass product metadata
+- **Harrason API Support**: Added support for Harrason assessment API alongside DISC Asia+
+- **Enhanced Logging**: Comprehensive logging of payment data, product routing, and API responses
+- **Security**: All credentials stored as encrypted secrets in Replit
 
 ## Project Architecture
 
 ### Main Components
-- **main.py**: Flask webhook server with the following endpoints:
-  - `/razorpay-webhook` (POST): Receives Razorpay payment.captured events
+- **main.py**: Flask webhook server
+  - `/razorpay-webhook` (POST): Receives Razorpay `payment.captured` events
   
 ### API Integrations
 1. **DISC Asia+ API**: For DISC personality assessments
-2. **Harrason API**: For Harrason assessments (configurable)
+2. **Harrason API**: For Harrason assessments (optional)
 3. **Gmail SMTP**: For sending confirmation emails
 
 ### Product Routing Logic
-The webhook determines which API to use based on:
-- `product_type` field in Razorpay notes
-- `product_name` field in Razorpay notes
-- Keywords in product name: "disc" → DISC Asia+, "harrason" → Harrason
-- Default: DISC Asia+ (if no match)
+The webhook determines which API to use based on product name:
+- If product name contains **"disc"** (case-insensitive) → DISC Asia+
+- If product name contains **"harrason"** (case-insensitive) → Harrason
+- Default: DISC Asia+ (if no keywords match)
 
 ## Configuration
 
 ### Required Secrets
 Set these in the Replit Secrets tab:
 - `DISC_CREDENTIAL`: DISC Asia+ API credential
-- `SMTP_EMAIL`: Gmail address for sending emails
-- `SMTP_PASSWORD`: Gmail app password
+- `SMTP_EMAIL`: Gmail address for sending confirmation emails
+- `SMTP_PASSWORD`: Gmail app password (NOT your regular password)
+
+### Optional Secrets
+- `HARRASON_API_URL`: Harrason API endpoint
+- `HARRASON_CREDENTIAL`: Harrason API credential
 
 ### Optional Environment Variables
-- `HARRASON_API_URL`: Harrason API endpoint (if using Harrason)
-- `HARRASON_CREDENTIAL`: Harrason API credential (if using Harrason)
 - `DISC_API_URL`: Override DISC API URL (defaults to production)
 - `FROM_NAME`: Email sender name (default: "Bodhi Training Solutions")
 - `REPLY_TO_EMAIL`: Reply-to email (default: support@bodhih.com)
 
-## Razorpay Webhook Setup
+## How to Set Up
 
-### Webhook URL
+### 1. Razorpay Webhook Configuration
 Configure in Razorpay Dashboard:
 ```
-https://your-replit-url.repl.co/razorpay-webhook
+Webhook URL: https://your-replit-url.repl.co/razorpay-webhook
+Event: payment.captured
 ```
 
-### Required Event
-- `payment.captured`
+### 2. Odoo Configuration
+In Odoo, configure Razorpay payment gateway to include product details in the notes field:
 
-### Passing Product Details from Odoo
-To enable product-based routing, include these fields in the Razorpay `notes` parameter:
-```python
-notes = {
-    "product_id": "123",           # Product ID from Odoo
-    "product_name": "DISC Assessment",  # Product name
-    "product_type": "disc",        # "disc" or "harrason"
+```json
+{
+    "product_id": "123",
+    "product_name": "DISC Asia+ Basic Report",
+    "product_type": "disc",
     "name": "Customer Name",
-    "user_email": "customer@email.com",
-    "gender": "Male"               # or "Female"
+    "user_email": "customer@example.com",
+    "gender": "Male"
 }
 ```
 
+**Key:** Product name should clearly indicate the assessment type:
+- Use "DISC" or "disc" for DISC assessments
+- Use "Harrason" or "harrason" for Harrason assessments
+
+### 3. Set Replit Secrets
+In Replit Secrets tab, add:
+- `DISC_CREDENTIAL`: Your DISC Asia+ API key
+- `SMTP_EMAIL`: Your Gmail address
+- `SMTP_PASSWORD`: Your Gmail app password
+
+### 4. Test the Integration
+1. Create a test sale order in Odoo with a DISC product
+2. Complete the Razorpay payment
+3. Check webhook logs in Replit console
+4. Verify confirmation email is sent to customer
+
 ## Testing
-You can test the webhook locally by sending a POST request with a sample Razorpay payload to `/razorpay-webhook`.
+You can test the webhook locally by sending a POST request with a sample Razorpay payload:
+
+```bash
+curl -X POST http://localhost:5000/razorpay-webhook \
+  -H "Content-Type: application/json" \
+  -d @test_payload.json
+```
 
 ## Deployment
-This application is configured to run on Replit with automatic deployment. The webhook server runs on port 5000 and is publicly accessible for receiving Razorpay webhooks.
+This application is configured to run on Replit with autoscale deployment. The webhook server runs on port 5000 and is publicly accessible for receiving Razorpay webhooks.
 
 ## User Preferences
 - Language: Python 3.11
 - Framework: Flask (lightweight webhook server)
-- Deployment: Replit (with autoscale deployment target)
+- Deployment: Replit (autoscale)
+- Approach: Configuration-based (no code changes needed in Odoo)
+
+## Files
+- `main.py` - Flask webhook server
+- `requirements.txt` - Python dependencies (Flask, requests)
+- `ODOO_RAZORPAY_CONFIGURATION_GUIDE.md` - Odoo integration guide
+- `test_webhook.py` - Local testing script
