@@ -1,0 +1,13 @@
+modules = ["python-3.11"]
+[agent]
+expertMode = true
+
+[nix]
+channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+DISC_API_URL = "https://discapi.discasiaplus.org/api/DISC/Respondent_and_Report_Details_Bodhih"
+FROM_NAME = "Bodhi Training Solutions"
+REPLY_TO_EMAIL = "support@bodhih.com"

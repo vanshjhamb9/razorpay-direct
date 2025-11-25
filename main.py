@@ -17,14 +17,13 @@ import sys
 app = Flask(__name__)
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
-# UPDATE THESE 6 LINES ONLY
-DISC_API_URL       = "https://discapi.discasiaplus.org/api/DISC/Respondent_and_Report_Details_Bodhih"
-DISC_CREDENTIAL    = "vezHgzd1EueI3clvF/1kNnMyCITD9UwC"
+DISC_API_URL       = os.environ.get("DISC_API_URL", "https://discapi.discasiaplus.org/api/DISC/Respondent_and_Report_Details_Bodhih")
+DISC_CREDENTIAL    = os.environ.get("DISC_CREDENTIAL", "")
 
-SMTP_EMAIL         = "info@inowix.in"          # ← Your Gmail
-SMTP_PASSWORD      = "Inowix2025@"      # ← Gmail App Password
-FROM_NAME          = "Bodhi Training Solutions"
-REPLY_TO_EMAIL     = "support@bodhih.com"
+SMTP_EMAIL         = os.environ.get("SMTP_EMAIL", "")
+SMTP_PASSWORD      = os.environ.get("SMTP_PASSWORD", "")
+FROM_NAME          = os.environ.get("FROM_NAME", "Bodhi Training Solutions")
+REPLY_TO_EMAIL     = os.environ.get("REPLY_TO_EMAIL", "support@bodhih.com")
 
 def generate_password():
     return ''.join(secrets.choice(string.ascii_letters + string.digits + "!@#$%^&*") for _ in range(12))
