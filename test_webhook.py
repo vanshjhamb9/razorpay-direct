@@ -1,7 +1,25 @@
 import requests
 import json
+import os
+import sys
 
-WEBHOOK_URL = "http://localhost:5000/razorpay-webhook"
+# Get Replit URL from environment or use localhost for local testing
+REPLIT_URL = os.environ.get('REPL_SLUG')
+if REPLIT_URL:
+    # Running on Replit - use localhost
+    WEBHOOK_URL = "http://localhost:5000/razorpay-webhook"
+else:
+    # Running externally - you need to provide your Replit URL
+    if len(sys.argv) > 1:
+        WEBHOOK_URL = f"{sys.argv[1]}/razorpay-webhook"
+    else:
+        print("ERROR: When running from your local computer, you must provide your Replit URL")
+        print("\nUsage: python test_webhook.py https://your-replit-url.repl.co")
+        print("\nTo find your Replit URL:")
+        print("1. Look at the Webview tab in Replit")
+        print("2. Copy the URL shown at the top")
+        print("3. Run: python test_webhook.py https://that-url.repl.co")
+        sys.exit(1)
 
 disc_payload = {
     "entity": "event",
@@ -86,19 +104,32 @@ harrason_payload = {
 }
 
 print("=" * 80)
+print(f"Testing webhook at: {WEBHOOK_URL}")
+print("=" * 80)
+print()
+
+print("=" * 80)
 print("Testing DISC Assessment Webhook")
 print("=" * 80)
-response = requests.post(WEBHOOK_URL, json=disc_payload)
-print(f"Status Code: {response.status_code}")
-print(f"Response: {response.text}")
+try:
+    response = requests.post(WEBHOOK_URL, json=disc_payload)
+    print(f"✓ Status Code: {response.status_code}")
+    print(f"✓ Response: {response.text}")
+except Exception as e:
+    print(f"✗ Error: {e}")
 print()
 
 print("=" * 80)
 print("Testing Harrason Assessment Webhook")
 print("=" * 80)
-response = requests.post(WEBHOOK_URL, json=harrason_payload)
-print(f"Status Code: {response.status_code}")
-print(f"Response: {response.text}")
+try:
+    response = requests.post(WEBHOOK_URL, json=harrason_payload)
+    print(f"✓ Status Code: {response.status_code}")
+    print(f"✓ Response: {response.text}")
+except Exception as e:
+    print(f"✗ Error: {e}")
 print()
 
-print("Check the Flask server logs above to see the detailed processing!")
+print("=" * 80)
+print("✓ Tests completed! Check the Flask server logs to see detailed processing.")
+print("=" * 80)
