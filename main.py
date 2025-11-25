@@ -28,8 +28,140 @@ SMTP_PASSWORD      = os.environ.get("SMTP_PASSWORD", "")
 FROM_NAME          = os.environ.get("FROM_NAME", "Bodhi Training Solutions")
 REPLY_TO_EMAIL     = os.environ.get("REPLY_TO_EMAIL", "support@bodhih.com")
 
+ODOO_URL           = os.environ.get("ODOO_URL", "https://bodhih.odoo.com")
+ODOO_DB            = os.environ.get("ODOO_DB", "bodhih")
+ODOO_USERNAME      = os.environ.get("ODOO_USERNAME", "")
+ODOO_API_KEY       = os.environ.get("ODOO_API_KEY", "")
+
 def generate_password():
     return ''.join(secrets.choice(string.ascii_letters + string.digits + "!@#$%^&*") for _ in range(12))
+
+def query_odoo_sale_order(order_name):
+    """Query Odoo API to get sale order and product details"""
+    if not ODOO_USERNAME or not ODOO_API_KEY:
+        logging.info("Odoo API credentials not configured - skipping Odoo query")
+        return None
+    
+    try:
+        import xmlrpc.client
+        
+        # Odoo XML-RPC endpoints
+        common_url = f"{ODOO_URL}/xmlrpc/2/common"
+        object_url = f"{ODOO_URL}/xmlrpc/2/object"
+        
+        # Authenticate
+        common = xmlrpc.client.ServerProxy(common_url)
+        uid = common.authenticate(ODOO_DB, ODOO_USERNAME, ODOO_API_KEY, {})
+        
+        if not uid:
+            logging.info("Odoo authentication failed")
+            return None
+        
+        # Search for sale order by name
+        models = xmlrpc.client.ServerProxy(object_url)
+        order_ids = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'sale.order', 'search',
+            [[['name', '=', order_name]]]
+        )
+        
+        if not order_ids:
+            logging.info(f"Sale order {order_name} not found in Odoo")
+            return None
+        
+        # Read sale order with order lines
+        orders = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'sale.order', 'read',
+            [order_ids],
+            {'fields': ['name', 'partner_id', 'order_line']}
+        )
+        
+        if not orders or not orders[0].get('order_line'):
+            logging.info(f"Sale order {order_name} has no order lines")
+            return None
+        
+        order = orders[0]
+        
+        # Read order lines to get product details
+        line_ids = order['order_line']
+        lines = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'sale.order.line', 'read',
+            [line_ids],
+            {'fields': ['product_id', 'name']}
+        )
+        
+        if not lines:
+            return None
+        
+        # Get first product
+        first_line = lines[0]
+        product_id = first_line['product_id'][0]
+        
+        # Read product details
+        products = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'product.product', 'read',
+            [[product_id]],
+            {'fields': ['id', 'name', 'default_code', 'categ_id']}
+        )
+        
+        if not products:
+            return None
+        
+        product = products[0]
+        
+        # Read partner details
+        partner_id = order['partner_id'][0]
+        partners = models.execute_kw(
+            ODOO_DB, uid, ODOO_API_KEY,
+            'res.partner', 'read',
+            [[partner_id]],
+            {'fields': ['name', 'email', 'phone']}
+        )
+        
+        partner = partners[0] if partners else {}
+        
+        logging.info(f"Odoo Query Success: Product={product['name']}, Partner={partner.get('name')}")
+        
+        return {
+            'product_id': str(product['id']),
+            'product_name': product['name'],
+            'product_code': product.get('default_code', ''),
+            'category': product.get('categ_id', [None, ''])[1] if product.get('categ_id') else '',
+            'partner_name': partner.get('name', ''),
+            'partner_email': partner.get('email', ''),
+            'partner_phone': partner.get('phone', '')
+        }
+        
+    except Exception as e:
+        logging.info(f"Odoo API Error: {e}")
+        return None
+
+def determine_product_type_from_odoo(odoo_data):
+    """Determine product type (disc/harrason) from Odoo product data"""
+    if not odoo_data:
+        return "disc"  # Default
+    
+    product_name = odoo_data.get('product_name', '').lower()
+    product_code = odoo_data.get('product_code', '').lower()
+    category = odoo_data.get('category', '').lower()
+    
+    # Check for Harrason keywords
+    harrason_keywords = ['harrason', 'harrison']
+    for keyword in harrason_keywords:
+        if keyword in product_name or keyword in product_code or keyword in category:
+            return 'harrason'
+    
+    # Check for DISC keywords
+    disc_keywords = ['disc']
+    for keyword in disc_keywords:
+        if keyword in product_name or keyword in product_code or keyword in category:
+            return 'disc'
+    
+    # Default to DISC
+    return 'disc'
 
 def extract_report_type(description):
     """Extract type from product name like 'Self-Awareness Advanced Report' → 'Self-Awareness Advanced'"""
@@ -181,10 +313,31 @@ def webhook():
     order_id     = p.get('order_id', '')
     payment_method = p.get('method', '').upper()
     
-    # Extract product details from notes
+    # Extract product details from notes OR query Odoo
     product_id   = notes.get('product_id', '')
-    product_name = notes.get('product_name', description)
+    product_name = notes.get('product_name', '')
     product_type = notes.get('product_type', '').lower()
+    
+    # If product details not in notes, query Odoo using description (SO number)
+    odoo_data = None
+    if not product_name and description:
+        logging.info(f"Product details not in notes - querying Odoo for SO: {description}")
+        odoo_data = query_odoo_sale_order(description)
+        
+        if odoo_data:
+            product_id = odoo_data['product_id']
+            product_name = odoo_data['product_name']
+            product_type = determine_product_type_from_odoo(odoo_data)
+            
+            # Update customer info from Odoo if not in notes
+            if not name or name == 'Customer':
+                name = odoo_data.get('partner_name', name)
+                display_name = name
+            if not email or email == 'no-email@bodhih.com':
+                email = odoo_data.get('partner_email', email)
+        else:
+            # Fallback to description
+            product_name = description
     
     # Extract report type from product name
     report_type = extract_report_type(product_name or description)

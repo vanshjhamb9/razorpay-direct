@@ -11,6 +11,8 @@ channel = "stable-25_05"
 DISC_API_URL = "https://discapi.discasiaplus.org/api/DISC/Respondent_and_Report_Details_Bodhih"
 FROM_NAME = "Bodhi Training Solutions"
 REPLY_TO_EMAIL = "support@bodhih.com"
+ODOO_URL = "https://bodhih.odoo.com"
+ODOO_DB = "bodhih"
 
 [workflows]
 runButton = "Project"
@@ -39,6 +41,10 @@ outputType = "webview"
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[[ports]]
+localPort = 36163
+externalPort = 3000
 
 [deployment]
 deploymentTarget = "autoscale"
