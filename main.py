@@ -203,6 +203,7 @@ def webhook():
     name         = notes.get('name', p.get('contact', 'Customer'))
     display_name = name
     email        = p.get('email') or notes.get('user_email', 'no-email@bodhih.com')
+    user_email   = notes.get('user_email', email)  # Email for sending confirmation
     gender       = notes.get('gender', 'Male')
     description  = p.get('description', '')
     amount       = p['amount'] / 100
@@ -259,7 +260,7 @@ def webhook():
     # Send email if registration succeeded
     if assessment_link:
         password = generate_password()
-        send_email(name, email, amount, p['id'], report_type, assessment_link, password)
+        send_email(name, user_email, amount, p['id'], report_type, assessment_link, password)
         logging.info(f"SUCCESS: {api_type} Account Created + Email Sent")
     else:
         logging.info(f"{api_type} REGISTRATION FAILED — No email sent")
