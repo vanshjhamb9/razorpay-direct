@@ -28,6 +28,31 @@ SMTP_PASSWORD      = os.environ.get("SMTP_PASSWORD", "")
 FROM_NAME          = os.environ.get("FROM_NAME", "Bodhi Training Solutions")
 REPLY_TO_EMAIL     = os.environ.get("REPLY_TO_EMAIL", "support@bodhih.com")
 
+RAZORPAY_KEY_ID    = os.environ.get("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
+
+
+def get_order_details(order_id):
+    """Fetch order details from Razorpay API to get product information"""
+    if not order_id or not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
+        logging.info(f"⚠ Cannot fetch order - missing order_id or API credentials")
+        return None
+    
+    try:
+        url = f"https://api.razorpay.com/v1/orders/{order_id}"
+        auth = (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET)
+        response = requests.get(url, auth=auth, timeout=10)
+        
+        if response.status_code == 200:
+            order = response.json()
+            logging.info(f"✓ Order Details Fetched: {order.get('description', 'No description')}")
+            return order
+        else:
+            logging.info(f"✗ Order fetch failed: HTTP {response.status_code}")
+            return None
+    except Exception as e:
+        logging.info(f"✗ Order fetch error: {e}")
+        return None
 
 def generate_password():
     return ''.join(secrets.choice(string.ascii_letters + string.digits + "!@#$%^&*") for _ in range(12))
@@ -239,13 +264,26 @@ def webhook():
     logging.info(f"Payment Method : {payment_method}")
     logging.info(f"Description    : {description}")
     
+    # If no notes, try to fetch order details from Razorpay API
+    if not notes or (isinstance(notes, dict) and not notes.get('name')):
+        logging.info("→ No product info in notes, fetching from Razorpay Order API...")
+        order_details = get_order_details(order_id)
+        if order_details:
+            order_description = order_details.get('description', description)
+            logging.info(f"→ Order description from API: {order_description}")
+            product_name = order_description
+        else:
+            product_name = description
+    else:
+        product_name = description
+    
     # Log raw payload snippet for debugging
     raw_payload = json.dumps(data, indent=2)
     logging.info(f"Full Raw Payload (first 800 chars):")
     logging.info(raw_payload[:800])
 
     # Check if notes is a list (multiple users) or dict (single user)
-    if isinstance(notes, list):
+    if isinstance(notes, list) and len(notes) > 0:
         # Multiple users - process each one
         logging.info(f"\n→ MULTIPLE USERS DETECTED: {len(notes)} users to register")
         for user_data in notes:
@@ -255,23 +293,22 @@ def webhook():
                 email = user_data.get('email', p.get('email', 'no-email@bodhih.com'))
                 user_email = user_data.get('user_email', email)
                 gender = user_data.get('gender', 'Male')
-                product_name = user_data.get('product_name', description)
+                user_product_name = user_data.get('product_name', product_name)
                 product_type = user_data.get('product_type', '').lower()
-                report_type = extract_report_type(product_name or description)
+                report_type = extract_report_type(user_product_name or product_name)
                 
                 logging.info(f"\n→ Processing User: {name} ({user_email})")
-                process_single_user(name, display_name, email, user_email, gender, product_name, product_type, report_type, amount, p['id'], description)
+                process_single_user(name, display_name, email, user_email, gender, user_product_name, product_type, report_type, amount, p['id'], description)
     else:
         # Single user - original logic
-        name         = notes.get('name', p.get('contact', 'Customer'))
+        name         = notes.get('name', p.get('contact', 'Customer')) if isinstance(notes, dict) else 'Customer'
         display_name = name
-        email        = p.get('email') or notes.get('user_email', 'no-email@bodhih.com')
-        user_email   = notes.get('user_email', email)
-        gender       = notes.get('gender', 'Male')
-        product_id   = notes.get('product_id', '')
-        product_name = notes.get('product_name', description)
-        product_type = notes.get('product_type', '').lower()
-        report_type = extract_report_type(product_name or description)
+        email        = (notes.get('user_email') if isinstance(notes, dict) else None) or p.get('email', 'no-email@bodhih.com')
+        user_email   = (notes.get('user_email') if isinstance(notes, dict) else None) or email
+        gender       = notes.get('gender', 'Male') if isinstance(notes, dict) else 'Male'
+        product_id   = notes.get('product_id', '') if isinstance(notes, dict) else ''
+        product_type = (notes.get('product_type', '') if isinstance(notes, dict) else '').lower()
+        report_type = extract_report_type(product_name)
 
         logging.info(f"Customer Name  : {name}")
         logging.info(f"Email          : {email}")
