@@ -155,12 +155,12 @@ def send_email(name, email, amount, payment_id, report_type, assessment_link, pa
         <h3 style="background:#e3f2fd;padding:15px;border-radius:8px;text-align:center;">
             {report_type} Assessment
         </h3>
-        <p><strong>Amount Paid:</strong> ₹{amount:,.2f}<br>
+        <p><strong>Amount Paid:</strong> ₹{amount:,.2f}<br><br>
            <strong>Payment ID:</strong> {payment_id}</p>
 
         <h3>Your Assessment Access</h3>
-        <p><strong>Login Email:</strong> {email}<br>
-           <strong>Password:</strong> <code style="background:#eee;padding:8px;font-size:15px;">{password}</code></p>
+        <p><strong>Login Email:</strong> {email}<br><br>
+           <strong>Password:</strong> <code style="background:#eee;padding:12px;font-size:15px;">{password}</code></p>
 
         <div style="text-align:center;margin:30px 0;">
             <a href="{assessment_link}" style="background:#1976d2;color:white;padding:16px 32px;text-decoration:none;border-radius:8px;font-size:18px;">
