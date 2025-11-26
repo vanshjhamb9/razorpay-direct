@@ -65,17 +65,25 @@ def register_on_disc_asia(name, display_name, email, gender, report_type):
     }
 
     try:
+        logging.info(f"→ DISC API Call: {DISC_API_URL}")
+        logging.info(f"→ Credential Length: {len(DISC_CREDENTIAL)} chars | First 20: {DISC_CREDENTIAL[:20]}...")
+        logging.info(f"→ Payload: Name={name}, Email={email}, Type={report_type}")
+        
         r = requests.post(DISC_API_URL, json=payload, timeout=20)
+        logging.info(f"→ DISC Response Status: {r.status_code}")
+        
         result = r.json()
         if result.get("success") and result.get("respondentDetails"):
             link = result["respondentDetails"][0].get("link")
-            logging.info(f"DISC SUCCESS → {report_type} | Link: {link}")
+            logging.info(f"✓ DISC SUCCESS → {report_type} | Link: {link}")
             return link
         else:
-            logging.info(f"DISC FAILED → {result.get('errorMessage')}")
+            error = result.get('errorMessage', 'Unknown error')
+            logging.info(f"✗ DISC FAILED → {error}")
+            logging.info(f"✗ Full Response: {json.dumps(result, indent=2)[:300]}")
             return None
     except Exception as e:
-        logging.info(f"DISC EXCEPTION → {e}")
+        logging.info(f"✗ DISC EXCEPTION → {e}")
         return None
 
 def register_on_harrason(name, display_name, email, gender, report_type):
