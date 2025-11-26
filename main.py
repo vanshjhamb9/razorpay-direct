@@ -48,7 +48,7 @@ def extract_report_type(description):
     return "Basic"
 
 def register_on_disc_asia(name, display_name, email, gender, report_type):
-    import time
+    from datetime import timezone
     payload = {
         "credentials": {"encryptedPassword": DISC_CREDENTIAL},
         "respondentDetails": [{
@@ -59,8 +59,8 @@ def register_on_disc_asia(name, display_name, email, gender, report_type):
             "type": report_type
         }],
         "transactionDetails": {
-            "transactionId": int(time.time()),
-            "transactionDate": datetime.now().isoformat(),
+            "transactionId": 1,
+            "transactionDate": datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
             "isSuccessful": True
         }
     }
@@ -92,6 +92,7 @@ def register_on_disc_asia(name, display_name, email, gender, report_type):
         return None
 
 def register_on_harrason(name, display_name, email, gender, report_type):
+    from datetime import timezone
     if not HARRASON_API_URL or not HARRASON_CREDENTIAL:
         logging.info("HARRASON API not configured - skipping")
         return None
@@ -106,8 +107,8 @@ def register_on_harrason(name, display_name, email, gender, report_type):
             "type": report_type
         }],
         "transactionDetails": {
-            "transactionId": 0,
-            "transactionDate": datetime.now().isoformat(),
+            "transactionId": 1,
+            "transactionDate": datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
             "isSuccessful": True
         }
     }
