@@ -34,17 +34,29 @@ def generate_password():
 
 
 def extract_report_type(description):
-    """Extract type from product name like 'Self-Awareness Advanced Report' → 'Self-Awareness Advanced'"""
+    """Extract DISC type from product description - must match DISC API standards"""
     if not description:
         return "Basic"
     
-    # Remove common words
-    text = description.replace("DISC", "").replace("Report", "").replace("report", "")
-    # Get everything before "Report"
-    match = re.search(r"(.+?)(?:\s+Report|$)", description, re.IGNORECASE)
-    if match:
-        cleaned = match.group(1).strip()
-        return cleaned if cleaned else "Basic"
+    # Valid DISC types (check longer ones first to avoid partial matches)
+    valid_types = [
+        "Career entry level",
+        "Team Build",
+        "Communication",
+        "Managerial",
+        "Advanced",
+        "Student",
+        "Career",
+        "Sales",
+        "Basic",
+        "Full"
+    ]
+    
+    desc_lower = description.lower()
+    for disc_type in valid_types:
+        if disc_type.lower() in desc_lower:
+            return disc_type
+    
     return "Basic"
 
 def register_on_disc_asia(name, display_name, email, gender, report_type):
