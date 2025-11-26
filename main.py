@@ -41,17 +41,29 @@ def get_order_details(order_id):
     try:
         url = f"https://api.razorpay.com/v1/orders/{order_id}"
         auth = (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET)
+        logging.info(f"→ Calling Razorpay API: {url}")
+        
         response = requests.get(url, auth=auth, timeout=10)
+        logging.info(f"→ Razorpay API Response Status: {response.status_code}")
         
         if response.status_code == 200:
             order = response.json()
-            logging.info(f"✓ Order Details Fetched: {order.get('description', 'No description')}")
+            logging.info(f"→ Full Order Data from Razorpay:")
+            logging.info(json.dumps(order, indent=2)[:1000])
+            
+            logging.info(f"✓ Order Details Extracted:")
+            logging.info(f"  - Description: {order.get('description', 'N/A')}")
+            logging.info(f"  - Amount: {order.get('amount', 'N/A')}")
+            logging.info(f"  - Notes: {order.get('notes', {})}")
+            logging.info(f"  - Customer ID: {order.get('customer_id', 'N/A')}")
+            
             return order
         else:
             logging.info(f"✗ Order fetch failed: HTTP {response.status_code}")
+            logging.info(f"→ Response: {response.text[:500]}")
             return None
     except Exception as e:
-        logging.info(f"✗ Order fetch error: {e}")
+        logging.info(f"✗ Order fetch error: {type(e).__name__}: {e}")
         return None
 
 def generate_password():
