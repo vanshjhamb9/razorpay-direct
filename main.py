@@ -380,9 +380,36 @@ def process_single_user(name, display_name, email, user_email, gender, product_n
     else:
         logging.info(f"[FAIL] {name}: {api_type} REGISTRATION FAILED - No email sent")
 
-@app.route('/razorpay-webhook', methods=['POST'])
+@app.route('/razorpay-webhook', methods=['POST', 'GET', 'OPTIONS'])
 def webhook():
-    data = request.get_json(force=True) or {}
+    # Log ALL requests to this endpoint
+    logging.info("\n" + "=" * 95)
+    logging.info("WEBHOOK ENDPOINT HIT")
+    logging.info("=" * 95)
+    logging.info(f"Method: {request.method}")
+    logging.info(f"Path: {request.path}")
+    logging.info(f"URL: {request.url}")
+    logging.info(f"Headers: {dict(request.headers)}")
+    logging.info(f"Remote Addr: {request.remote_addr}")
+    logging.info(f"Time: {datetime.now().strftime('%d %b %Y, %I:%M %p')}")
+    
+    # Handle OPTIONS for CORS
+    if request.method == 'OPTIONS':
+        logging.info("[CORS] OPTIONS request received")
+        return "ok", 200
+    
+    # Handle GET requests (for testing)
+    if request.method == 'GET':
+        logging.info("[GET] Webhook endpoint accessed via GET")
+        return {"status": "webhook_endpoint_active", "method": "GET"}, 200
+    
+    # Handle POST requests
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception as e:
+        logging.info(f"[ERROR] Failed to parse JSON: {e}")
+        logging.info(f"Raw data: {request.data[:500]}")
+        data = {}
     
     # Log ALL webhook calls for debugging
     logging.info("\n" + "=" * 95)
@@ -605,6 +632,35 @@ def test_odoo():
         }
         logging.info("[FAIL] Test failed: Could not retrieve products")
         return response, 500
+
+# Add catch-all route to log ALL requests for debugging
+@app.route('/', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'])
+@app.route('/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'])
+def catch_all(path=''):
+    """Catch all routes to debug routing issues"""
+    logging.info("\n" + "=" * 95)
+    logging.info("CATCH-ALL ROUTE HIT")
+    logging.info("=" * 95)
+    logging.info(f"Method: {request.method}")
+    logging.info(f"Path: /{path}")
+    logging.info(f"URL: {request.url}")
+    logging.info(f"Headers: {dict(request.headers)}")
+    logging.info(f"Remote Addr: {request.remote_addr}")
+    
+    if request.method == 'POST':
+        try:
+            data = request.get_json(force=True) or {}
+            logging.info(f"POST Data: {json.dumps(data, indent=2)[:500]}")
+        except:
+            logging.info(f"POST Data: {request.data[:500]}")
+    
+    # If it's the webhook route, process it
+    if path == 'razorpay-webhook' or request.path == '/razorpay-webhook':
+        # Call the actual webhook handler
+        return webhook()
+    
+    # For other routes, return 404
+    return {"error": "Not Found", "path": f"/{path}"}, 404
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
