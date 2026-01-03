@@ -16,7 +16,27 @@ import sys
 import xmlrpc.client
 
 app = Flask(__name__)
-logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+
+# Configure logging for Vercel - ensure it goes to stdout
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+# Force logging to stdout
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Log startup
+logger.info("=" * 95)
+logger.info("FLASK APP STARTING")
+logger.info("=" * 95)
+logger.info(f"Python Version: {sys.version}")
+logger.info(f"Flask App Name: {app.name}")
+logger.info("=" * 95)
 
 DISC_API_URL       = os.environ.get("DISC_API_URL", "https://discapi.discasiaplus.org/api/DISC/Respondent_and_Report_Details_Bodhih")
 DISC_CREDENTIAL    = os.environ.get("DISC_CREDENTIAL", "vezHgzd1EueI3clvF/1kNnMyCITD9UwC")
