@@ -1,18 +1,15 @@
 """
-Vercel serverless function for /razorpay-webhook route
-Routes to the webhook handler in main.py
+Vercel serverless function for /test-odoo route
 """
 
 import sys
 import os
 
-# Add parent directory to path
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-# Import Flask app from main.py
 from main import app
 
-# Export handler - Flask app is WSGI compatible
+# Export handler
 handler = app

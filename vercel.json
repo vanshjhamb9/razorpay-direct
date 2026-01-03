@@ -2,14 +2,22 @@
   "version": 2,
   "builds": [
     {
-      "src": "main.py",
+      "src": "api/*.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
+      "src": "/razorpay-webhook",
+      "dest": "/api/razorpay-webhook.py"
+    },
+    {
+      "src": "/test-odoo",
+      "dest": "/api/test-odoo.py"
+    },
+    {
       "src": "/(.*)",
-      "dest": "main.py"
+      "dest": "/api/index.py"
     }
   ]
 }

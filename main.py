@@ -682,10 +682,12 @@ def catch_all(path=''):
     # For other routes, return 404
     return {"error": "Not Found", "path": f"/{path}"}, 404
 
-# Export handler for Vercel (must be at module level)
-# Vercel Python runtime looks for 'handler' variable
-handler = app
-
+# For Vercel: Export the Flask app directly
+# Vercel's @vercel/python automatically handles Flask WSGI apps
+# The handler variable is what Vercel looks for
 # Run locally if executed directly
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+# Note: For Vercel, handler is exported in api/*.py files
+# This allows the Flask app to work both locally and on Vercel
