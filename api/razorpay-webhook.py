@@ -1,20 +1,28 @@
 """
 Vercel serverless function for /razorpay-webhook
-Completely standalone - no Flask dependency
+Standalone implementation - NO Flask imports
 """
 
+import json
 import sys
 import os
-import json
 import logging
 import requests
 import xmlrpc.client
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 import smtplib
 from email.message import EmailMessage
 import secrets
 import string
+
+# #region agent log
+log_path = r'c:\Users\asus\OneDrive\Desktop\Oddo auto\.cursor\debug.log'
+try:
+    with open(log_path, 'a') as f:
+        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"api/razorpay-webhook.py:20","message":"Module loading started","data":{"python_version":sys.version},"timestamp":int(__import__('time').time()*1000)}) + '\n')
+except: pass
+# #endregion
 
 # Configure logging
 logging.basicConfig(
@@ -23,6 +31,13 @@ logging.basicConfig(
     stream=sys.stdout
 )
 logger = logging.getLogger(__name__)
+
+# #region agent log
+try:
+    with open(log_path, 'a') as f:
+        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"api/razorpay-webhook.py:35","message":"Logger configured","data":{},"timestamp":int(__import__('time').time()*1000)}) + '\n')
+except: pass
+# #endregion
 
 # Environment variables
 ODOO_URL = os.environ.get("ODOO_URL", "https://bodhih.odoo.com")
@@ -42,24 +57,35 @@ SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "jxrmhihcvqlqojqa")
 FROM_NAME = os.environ.get("FROM_NAME", "Bodhi Training Solutions")
 REPLY_TO_EMAIL = os.environ.get("REPLY_TO_EMAIL", "support@bodhih.com")
 
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
+
+# #region agent log
+try:
+    with open(log_path, 'a') as f:
+        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"api/razorpay-webhook.py:60","message":"Environment variables loaded","data":{"odoo_url":ODOO_URL,"has_disc_cred":bool(DISC_CREDENTIAL)},"timestamp":int(__import__('time').time()*1000)}) + '\n')
+except: pass
+# #endregion
+
+# Copy all necessary functions from main.py (standalone, no Flask)
 def get_odoo_products_by_order_id(order_id):
     """Query Odoo database to get products sold in a sale order"""
     if not order_id or not ODOO_URL or not ODOO_DB:
-        logger.info("Cannot query Odoo - missing order_id or Odoo credentials")
+        logger.info(f"[WARN] Cannot query Odoo - missing order_id or Odoo credentials")
         return None
     
     try:
         models = xmlrpc.client.ServerProxy(ODOO_XMLRPC_URL)
-        logger.info(f"Connecting to Odoo: {ODOO_URL}")
+        logger.info(f"-> Connecting to Odoo: {ODOO_URL}")
         
         common = xmlrpc.client.ServerProxy(f'{ODOO_URL}/xmlrpc/2/common')
         uid = common.authenticate(ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, {})
         
         if not uid:
-            logger.info("Odoo authentication failed")
+            logger.info(f"[FAIL] Odoo authentication failed")
             return None
         
-        logger.info(f"Odoo authenticated successfully (UID: {uid})")
+        logger.info(f"[OK] Odoo authenticated successfully (UID: {uid})")
         
         order_id_int = None
         try:
@@ -81,11 +107,11 @@ def get_odoo_products_by_order_id(order_id):
         )
         
         if not sale_order_ids:
-            logger.info(f"Sale order not found in Odoo for order_id: {order_id}")
+            logger.info(f"[WARN] Sale order not found in Odoo for order_id: {order_id}")
             return None
         
         sale_order_id = sale_order_ids[0]
-        logger.info(f"Found sale order in Odoo: ID {sale_order_id}")
+        logger.info(f"[OK] Found sale order in Odoo: ID {sale_order_id}")
         
         order_lines = models.execute_kw(
             ODOO_DB, uid, ODOO_PASSWORD,
@@ -98,10 +124,10 @@ def get_odoo_products_by_order_id(order_id):
         )
         
         if not order_lines:
-            logger.info(f"No order lines found for sale order {sale_order_id}")
+            logger.info(f"[WARN] No order lines found for sale order {sale_order_id}")
             return None
         
-        logger.info(f"Found {len(order_lines)} product(s) in Odoo order:")
+        logger.info(f"[OK] Found {len(order_lines)} product(s) in Odoo order:")
         products = []
         for line in order_lines:
             product_info = {
@@ -113,7 +139,6 @@ def get_odoo_products_by_order_id(order_id):
                 'line_name': line.get('name', '')
             }
             products.append(product_info)
-            logger.info(f"  - Product: {product_info['product_name']} (ID: {product_info['product_id']})")
         
         return {
             'sale_order_id': sale_order_id,
@@ -121,7 +146,7 @@ def get_odoo_products_by_order_id(order_id):
         }
         
     except Exception as e:
-        logger.error(f"Odoo query error: {type(e).__name__}: {e}")
+        logger.error(f"[ERROR] Odoo query error: {type(e).__name__}: {e}")
         import traceback
         logger.error(traceback.format_exc())
         return None
@@ -136,14 +161,16 @@ def determine_product_type_from_odoo(product_name, product_line_name):
     harrison_keywords = ['harrison', 'harrason', 'harison', 'harisson']
     for keyword in harrison_keywords:
         if keyword in combined_text:
-            logger.info(f"Product identified as HARRISON: {product_name}")
+            logger.info(f"[OK] Product identified as HARRISON: {product_name}")
             return "harrison"
     
-    if 'disc' in combined_text:
-        logger.info(f"Product identified as DISC: {product_name}")
-        return "disc"
+    disc_keywords = ['disc', 'diSC', 'DISC']
+    for keyword in disc_keywords:
+        if keyword in combined_text:
+            logger.info(f"[OK] Product identified as DISC: {product_name}")
+            return "disc"
     
-    logger.info(f"Product type unclear, defaulting to DISC: {product_name}")
+    logger.info(f"[WARN] Product type unclear, defaulting to DISC: {product_name}")
     return "disc"
 
 def extract_report_type(description):
@@ -152,16 +179,8 @@ def extract_report_type(description):
         return "Basic"
     
     valid_types = [
-        "Career entry level",
-        "Team Build",
-        "Communication",
-        "Managerial",
-        "Advanced",
-        "Student",
-        "Career",
-        "Sales",
-        "Basic",
-        "Full"
+        "Career entry level", "Team Build", "Communication", "Managerial",
+        "Advanced", "Student", "Career", "Sales", "Basic", "Full"
     ]
     
     desc_lower = description.lower()
@@ -171,9 +190,10 @@ def extract_report_type(description):
     
     return "Basic"
 
+def generate_password():
+    return ''.join(secrets.choice(string.ascii_letters + string.digits + "!@#$%^&*") for _ in range(12))
+
 def register_on_disc_asia(name, display_name, email, gender, report_type):
-    """Register user on DISC Asia+ API"""
-    from datetime import timezone
     payload = {
         "credentials": {"encryptedPassword": DISC_CREDENTIAL},
         "respondentDetails": [{
@@ -189,32 +209,30 @@ def register_on_disc_asia(name, display_name, email, gender, report_type):
             "isSuccessful": True
         }
     }
-    
+
     try:
-        logger.info(f"DISC API Call: {DISC_API_URL}")
+        logger.info(f"-> DISC API Call: {DISC_API_URL}")
         r = requests.post(DISC_API_URL, json=payload, timeout=20)
-        logger.info(f"Response Status: {r.status_code}")
+        logger.info(f"-> Response Status: {r.status_code}")
         
         if r.status_code != 200:
-            logger.info(f"DISC HTTP ERROR {r.status_code}: {r.text[:300]}")
+            logger.info(f"[FAIL] DISC HTTP ERROR {r.status_code}: {r.text[:300]}")
             return None
-        
+            
         result = r.json()
         if result.get("success") and result.get("respondentDetails"):
             link = result["respondentDetails"][0].get("link")
-            logger.info(f"DISC SUCCESS -> Link: {link}")
+            logger.info(f"[OK] DISC SUCCESS -> Link: {link}")
             return link
         else:
             error = result.get('errorMessage', 'Unknown error')
-            logger.info(f"DISC FAILED -> {error}")
+            logger.info(f"[FAIL] DISC FAILED -> {error}")
             return None
     except Exception as e:
-        logger.error(f"DISC ERROR -> {type(e).__name__}: {e}")
+        logger.error(f"[ERROR] DISC ERROR -> {type(e).__name__}: {e}")
         return None
 
 def register_on_harrason(name, display_name, email, gender, report_type):
-    """Register user on Harrason API"""
-    from datetime import timezone
     if not HARRASON_API_URL or not HARRASON_CREDENTIAL:
         logger.info("HARRASON API not configured - skipping")
         return None
@@ -234,7 +252,7 @@ def register_on_harrason(name, display_name, email, gender, report_type):
             "isSuccessful": True
         }
     }
-    
+
     try:
         r = requests.post(HARRASON_API_URL, json=payload, timeout=20)
         result = r.json()
@@ -249,18 +267,13 @@ def register_on_harrason(name, display_name, email, gender, report_type):
         logger.error(f"HARRASON EXCEPTION -> {e}")
         return None
 
-def generate_password():
-    """Generate random password"""
-    return ''.join(secrets.choice(string.ascii_letters + string.digits + "!@#$%^&*") for _ in range(12))
-
 def send_email(name, email, amount, payment_id, report_type, assessment_link, password):
-    """Send email to customer"""
     msg = EmailMessage()
     msg['From'] = f"{FROM_NAME} <{SMTP_EMAIL}>"
     msg['To'] = email
     msg['Reply-To'] = REPLY_TO_EMAIL
     msg['Subject'] = f"Your {report_type} Assessment is Ready!"
-    
+
     html = f"""
     <html>
     <body style="font-family:Arial,sans-serif;max-width:600px;margin:30px auto;padding:20px;background:#f9f9f9;border-radius:10px;">
@@ -270,19 +283,23 @@ def send_email(name, email, amount, payment_id, report_type, assessment_link, pa
         <h3 style="background:#e3f2fd;padding:15px;border-radius:8px;text-align:center;">
             {report_type} Assessment
         </h3>
-        <p><strong>Amount Paid:</strong> Rs {amount:,.2f}<br>
+        <p><strong>Amount Paid:</strong> ₹{amount:,.2f}<br>
            <strong>Payment ID:</strong> {payment_id}</p>
+
         <h3>Your Assessment Access</h3>
         <p><strong>Login Email:</strong> {email}<br>
            <strong>Password:</strong> <code style="background:#eee;padding:8px;font-size:15px;">{password}</code></p>
+
         <div style="text-align:center;margin:30px 0;">
             <a href="{assessment_link}" style="background:#1976d2;color:white;padding:16px 32px;text-decoration:none;border-radius:8px;font-size:18px;">
                 Start Your Assessment Now
             </a>
         </div>
+
         <p style="background:#fff3cd;padding:15px;border-radius:8px;">
             This link is unique to you. Keep this email safe.
         </p>
+
         <p style="font-size:12px;color:#777;text-align:center;">
             Need help? Reply to this email.<br>
             Bodhi Training Solutions | www.bodhih.com
@@ -292,7 +309,7 @@ def send_email(name, email, amount, payment_id, report_type, assessment_link, pa
     """
     msg.set_content("HTML email required.")
     msg.add_alternative(html, subtype='html')
-    
+
     try:
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
             s.login(SMTP_EMAIL, SMTP_PASSWORD)
@@ -316,25 +333,62 @@ def process_single_user(name, display_name, email, user_email, gender, product_n
         logger.info(f"UNKNOWN PRODUCT TYPE: {product_type} - defaulting to DISC Asia+")
         api_type = "DISC ASIA+"
         assessment_link = register_on_disc_asia(name, display_name, email, gender, report_type)
-    
+
     if assessment_link:
         password = generate_password()
         send_email(name, user_email, amount, payment_id, report_type, assessment_link, password)
-        logger.info(f"{name}: {api_type} Account Created + Email Sent to {user_email}")
+        logger.info(f"[OK] {name}: {api_type} Account Created + Email Sent to {user_email}")
     else:
-        logger.info(f"{name}: {api_type} REGISTRATION FAILED - No email sent")
+        logger.error(f"[FAIL] {name}: {api_type} REGISTRATION FAILED - No email sent")
+
+# #region agent log
+try:
+    with open(log_path, 'a') as f:
+        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"api/razorpay-webhook.py:280","message":"Helper functions defined","data":{"functions":["get_odoo_products_by_order_id","determine_product_type_from_odoo","extract_report_type","register_on_disc_asia","send_email","process_single_user"]},"timestamp":int(__import__('time').time()*1000)}) + '\n')
+except: pass
+# #endregion
 
 def handler(request):
     """
     Vercel serverless function handler
-    Completely standalone - no Flask dependency
+    Hypothesis A: Function handler format is correct
     """
+    # #region agent log
+    try:
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"api/razorpay-webhook.py:handler","message":"Handler function called","data":{"request_type":type(request).__name__,"has_method":hasattr(request,'method'),"has_body":hasattr(request,'body'),"has_path":hasattr(request,'path')},"timestamp":int(__import__('time').time()*1000)}) + '\n')
+    except: pass
+    # #endregion
+    
     logger.info("=" * 80)
     logger.info("WEBHOOK HANDLER CALLED")
     logger.info("=" * 80)
-    logger.info(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"Request type: {type(request)}")
+    logger.info(f"Request attributes: {dir(request)}")
     
     try:
+        # Get request method
+        method = getattr(request, 'method', 'POST')
+        logger.info(f"Method: {method}")
+        
+        # Handle OPTIONS for CORS
+        if method == 'OPTIONS':
+            logger.info("[CORS] OPTIONS request received")
+            return {
+                'statusCode': 200,
+                'headers': {'Content-Type': 'text/plain'},
+                'body': 'ok'
+            }
+        
+        # Handle GET requests (for testing)
+        if method == 'GET':
+            logger.info("[GET] Webhook endpoint accessed via GET")
+            return {
+                'statusCode': 200,
+                'headers': {'Content-Type': 'application/json'},
+                'body': json.dumps({"status": "webhook_endpoint_active", "method": "GET"})
+            }
+        
         # Get request body
         body = b''
         if hasattr(request, 'body'):
@@ -349,6 +403,13 @@ def handler(request):
             body = getattr(request, 'data', b'') or b''
             data = {}
         
+        # #region agent log
+        try:
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"api/razorpay-webhook.py:handler","message":"Request body parsed","data":{"body_length":len(body),"has_data":bool(data)},"timestamp":int(__import__('time').time()*1000)}) + '\n')
+        except: pass
+        # #endregion
+        
         # Parse JSON if we have body
         if body and not data:
             if isinstance(body, bytes):
@@ -357,12 +418,12 @@ def handler(request):
                 body_str = str(body)
             try:
                 data = json.loads(body_str)
-            except:
-                logger.error(f"Failed to parse JSON: {body_str[:200]}")
+            except Exception as e:
+                logger.error(f"Failed to parse JSON: {e}")
+                logger.error(f"Body: {body_str[:200]}")
                 data = {}
         
         logger.info(f"Event: {data.get('event', 'N/A')}")
-        logger.info(f"Data received: {bool(data)}")
         
         # Check if it's payment.captured event
         if not data or data.get('event') != 'payment.captured':
@@ -373,55 +434,44 @@ def handler(request):
                 'body': 'ok'
             }
         
-        # Extract payment data
+        # #region agent log
+        try:
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"F","location":"api/razorpay-webhook.py:handler","message":"Payment processing started","data":{"event":"payment.captured"},"timestamp":int(__import__('time').time()*1000)}) + '\n')
+        except: pass
+        # #endregion
+        
+        # Process payment
         p = data['payload']['payment']['entity']
         notes = p.get('notes', {})
         description = p.get('description', '')
         amount = p['amount'] / 100
         order_id = p.get('order_id', '')
         
-        logger.info("=" * 80)
-        logger.info("NEW PAYMENT FROM ODOO WEBSITE - BODHIH.COM")
-        logger.info("=" * 80)
-        logger.info(f"Time: {datetime.now().strftime('%d %b %Y, %I:%M %p')}")
-        logger.info(f"Amount: Rs {amount:,.2f}")
-        logger.info(f"Payment ID: {p['id']}")
-        logger.info(f"Order ID: {order_id}")
-        logger.info(f"Description: {description}")
+        logger.info(f"Processing payment: {p['id']}, Amount: {amount}")
         
         # Extract Odoo order identifier
         odoo_order_identifier = None
-        
         if description:
             so_match = re.search(r'SO-[\d-]+', description, re.IGNORECASE)
             if so_match:
                 odoo_order_identifier = so_match.group(0)
-                logger.info(f"Extracted Odoo order identifier: {odoo_order_identifier}")
             elif description.strip().isdigit():
                 odoo_order_identifier = description.strip()
-                logger.info(f"Using description as Odoo order ID: {odoo_order_identifier}")
         
         if isinstance(notes, dict) and not odoo_order_identifier:
             odoo_order_identifier = notes.get('sale_order_id') or notes.get('order_id') or notes.get('odoo_order_id')
-            if odoo_order_identifier:
-                logger.info(f"Found Odoo order identifier in notes: {odoo_order_identifier}")
         
-        # Query Odoo if we have an identifier
+        # Query Odoo
         odoo_order_info = None
         if odoo_order_identifier:
-            logger.info(f"Querying Odoo database for order: {odoo_order_identifier}")
+            logger.info(f"Querying Odoo for order: {odoo_order_identifier}")
             odoo_order_info = get_odoo_products_by_order_id(odoo_order_identifier)
-            if odoo_order_info:
-                logger.info(f"Successfully retrieved {len(odoo_order_info.get('products', []))} product(s) from Odoo")
-            else:
-                logger.info("Could not retrieve products from Odoo")
         
-        # Process products from Odoo
+        # Process products
         if odoo_order_info and odoo_order_info.get('products'):
-            logger.info("PROCESSING PRODUCTS FROM ODOO DATABASE")
             products = odoo_order_info['products']
             
-            # Get customer info
             if isinstance(notes, list) and len(notes) > 0:
                 # Multiple users
                 for idx, user_data in enumerate(notes):
@@ -432,15 +482,10 @@ def handler(request):
                         gender = user_data.get('gender', 'Male')
                         
                         product = products[idx] if idx < len(products) else products[0]
-                        product_name = product.get('product_name', product.get('line_name', ''))
-                        product_type = determine_product_type_from_odoo(
-                            product.get('product_name', ''),
-                            product.get('line_name', '')
-                        )
+                        product_name = product.get('product_name', product.get('line_name', description))
+                        product_type = determine_product_type_from_odoo(product.get('product_name', ''), product.get('line_name', ''))
                         report_type = extract_report_type(product_name)
                         
-                        logger.info(f"Processing User: {name} ({user_email})")
-                        logger.info(f"Product: {product_name} | Type: {product_type.upper()}")
                         process_single_user(name, name, email, user_email, gender, product_name, product_type, report_type, amount, p['id'], description)
             else:
                 # Single user
@@ -449,26 +494,36 @@ def handler(request):
                 user_email = (notes.get('user_email') if isinstance(notes, dict) else None) or email
                 gender = notes.get('gender', 'Male') if isinstance(notes, dict) else 'Male'
                 
-                logger.info(f"Customer Name: {name}")
-                logger.info(f"Email: {email}")
-                logger.info(f"Products Found: {len(products)}")
-                
-                # Process each product
                 for product in products:
-                    product_name = product.get('product_name', product.get('line_name', ''))
-                    product_type = determine_product_type_from_odoo(
-                        product.get('product_name', ''),
-                        product.get('line_name', '')
-                    )
+                    product_name = product.get('product_name', product.get('line_name', description))
+                    product_type = determine_product_type_from_odoo(product.get('product_name', ''), product.get('line_name', ''))
                     report_type = extract_report_type(product_name)
                     
-                    logger.info(f"Processing Product: {product_name}")
-                    logger.info(f"Type: {product_type.upper()} | Report: {report_type}")
                     process_single_user(name, name, email, user_email, gender, product_name, product_type, report_type, amount, p['id'], description)
-        
-        logger.info("=" * 80)
-        logger.info("Webhook processing completed successfully")
-        logger.info("=" * 80)
+        else:
+            # Fallback to notes
+            logger.info("FALLBACK: Using Razorpay/Notes data")
+            if isinstance(notes, list) and len(notes) > 0:
+                for user_data in notes:
+                    if isinstance(user_data, dict):
+                        name = user_data.get('name', 'Customer')
+                        email = user_data.get('email', p.get('email', 'no-email@bodhih.com'))
+                        user_email = user_data.get('user_email', email)
+                        gender = user_data.get('gender', 'Male')
+                        user_product_name = user_data.get('product_name', description)
+                        product_type = user_data.get('product_type', '').lower()
+                        report_type = extract_report_type(user_product_name or description)
+                        
+                        process_single_user(name, name, email, user_email, gender, user_product_name, product_type, report_type, amount, p['id'], description)
+            else:
+                name = notes.get('name', p.get('contact', 'Customer')) if isinstance(notes, dict) else 'Customer'
+                email = (notes.get('user_email') if isinstance(notes, dict) else None) or p.get('email', 'no-email@bodhih.com')
+                user_email = (notes.get('user_email') if isinstance(notes, dict) else None) or email
+                gender = notes.get('gender', 'Male') if isinstance(notes, dict) else 'Male'
+                product_type = (notes.get('product_type', '') if isinstance(notes, dict) else '').lower()
+                report_type = extract_report_type(description)
+                
+                process_single_user(name, name, email, user_email, gender, description, product_type, report_type, amount, p['id'], description)
         
         return {
             'statusCode': 200,
@@ -477,12 +532,30 @@ def handler(request):
         }
         
     except Exception as e:
-        logger.error(f"ERROR processing webhook: {type(e).__name__}: {e}")
+        logger.error(f"ERROR: {type(e).__name__}: {e}")
         import traceback
         logger.error(traceback.format_exc())
+        
+        # #region agent log
+        try:
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"G","location":"api/razorpay-webhook.py:handler","message":"Exception caught","data":{"error_type":type(e).__name__,"error_msg":str(e)},"timestamp":int(__import__('time').time()*1000)}) + '\n')
+        except: pass
+        # #endregion
         
         return {
             'statusCode': 500,
             'headers': {'Content-Type': 'text/plain'},
             'body': f'Error: {str(e)}'
         }
+
+# #region agent log
+try:
+    with open(log_path, 'a') as f:
+        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H","location":"api/razorpay-webhook.py:end","message":"Module loaded, handler defined","data":{"handler_type":type(handler).__name__,"is_function":callable(handler),"handler_name":handler.__name__},"timestamp":int(__import__('time').time()*1000)}) + '\n')
+except: pass
+# #endregion
+
+logger.info(f"Handler type: {type(handler)}")
+logger.info(f"Handler is callable: {callable(handler)}")
+logger.info(f"Handler name: {handler.__name__}")
