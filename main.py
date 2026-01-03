@@ -682,5 +682,10 @@ def catch_all(path=''):
     # For other routes, return 404
     return {"error": "Not Found", "path": f"/{path}"}, 404
 
+# Export handler for Vercel (must be at module level)
+# Vercel Python runtime looks for 'handler' variable
+handler = app
+
+# Run locally if executed directly
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
