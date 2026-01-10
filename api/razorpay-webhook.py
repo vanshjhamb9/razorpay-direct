@@ -170,10 +170,24 @@ def handler(request):
         body = getattr(request, 'body', getattr(request, 'data', b'')) or b''
         data = json.loads(body.decode('utf-8') if isinstance(body, bytes) else str(body)) if body else {}
         
-        if not data or data.get('event') != 'payment.captured':
+        # Accept both payment.captured and order.paid events
+        event_type = data.get('event', '')
+        if not data or event_type not in ['payment.captured', 'order.paid']:
+            logger.info(f"[SKIP] Event is '{event_type}' - only processing 'payment.captured' or 'order.paid' events")
             return {'statusCode': 200, 'headers': {'Content-Type': 'text/plain'}, 'body': 'ok'}
         
-        p = data['payload']['payment']['entity']
+        # Extract payment entity from payload
+        if 'payload' in data and 'payment' in data['payload'] and 'entity' in data['payload']['payment']:
+            p = data['payload']['payment']['entity']
+            logger.info(f"[OK] Processing event: {event_type}")
+        else:
+            logger.info(f"[SKIP] Payment entity not found in payload for event: {event_type}")
+            return {'statusCode': 200, 'headers': {'Content-Type': 'text/plain'}, 'body': 'ok'}
+        
+        # Verify payment is captured
+        if p.get('status') != 'captured' or not p.get('captured', False):
+            logger.info(f"[SKIP] Payment not captured - status: {p.get('status')}, captured: {p.get('captured')}")
+            return {'statusCode': 200, 'headers': {'Content-Type': 'text/plain'}, 'body': 'ok'}
         notes = p.get('notes', {})
         description = p.get('description', '')
         amount = p['amount'] / 100

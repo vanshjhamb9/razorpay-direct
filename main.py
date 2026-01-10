@@ -610,11 +610,25 @@ def webhook():
     logging.info(f"Time: {datetime.now().strftime('%d %b %Y, %I:%M %p')}")
     logging.info(f"Full Payload: {json.dumps(data, indent=2)[:1000]}")
     
-    if not data or data.get('event') != 'payment.captured':
-        logging.info(f"[SKIP] Event is not 'payment.captured' - ignoring")
+    # Accept both payment.captured and order.paid events
+    event_type = data.get('event', '')
+    if not data or event_type not in ['payment.captured', 'order.paid']:
+        logging.info(f"[SKIP] Event is '{event_type}' - only processing 'payment.captured' or 'order.paid' events")
         return "ok", 200
-
-    p = data['payload']['payment']['entity']
+    
+    # Extract payment entity from payload
+    # Both events have payment in payload.payment.entity
+    if 'payload' in data and 'payment' in data['payload'] and 'entity' in data['payload']['payment']:
+        p = data['payload']['payment']['entity']
+        logging.info(f"[OK] Processing event: {event_type}")
+    else:
+        logging.info(f"[SKIP] Payment entity not found in payload for event: {event_type}")
+        return "ok", 200
+    
+    # Verify payment is captured
+    if p.get('status') != 'captured' or not p.get('captured', False):
+        logging.info(f"[SKIP] Payment not captured - status: {p.get('status')}, captured: {p.get('captured')}")
+        return "ok", 200
     notes = p.get('notes', {})
     description  = p.get('description', '')
     amount       = p['amount'] / 100
