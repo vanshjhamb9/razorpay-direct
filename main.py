@@ -689,6 +689,17 @@ def webhook():
     if p.get('status') != 'captured' or not p.get('captured', False):
         logging.info(f"[SKIP] Payment not captured - status: {p.get('status')}, captured: {p.get('captured')}")
         return "ok", 200
+    
+    # Prevent duplicate processing - check if payment already processed
+    payment_id = p.get('id', '')
+    if payment_id in processed_payments:
+        logging.info(f"[SKIP] Payment {payment_id} already processed - ignoring duplicate webhook")
+        return "ok", 200
+    
+    # Mark payment as being processed
+    processed_payments.add(payment_id)
+    logging.info(f"[OK] Processing payment {payment_id} for the first time")
+    
     notes = p.get('notes', {})
     description  = p.get('description', '')
     amount       = p['amount'] / 100
