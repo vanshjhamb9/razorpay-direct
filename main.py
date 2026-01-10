@@ -505,8 +505,8 @@ def send_email(name, email, amount, payment_id, report_type, assessment_link, pa
            <strong>Payment ID:</strong> {payment_id}</p>
 
         <h3>Your Assessment Access</h3>
-        <p><strong>Login Email:</strong> {email}<br>
-           <strong>Password:</strong> <code style="background:#eee;padding:8px;font-size:15px;">{password}</code></p>
+        <p style="margin-bottom:10px;"><strong>Login Email:</strong> {email}</p>
+        <p style="margin-top:10px;margin-bottom:20px;"><strong>Password:</strong> <code style="background:#eee;padding:8px;font-size:15px;">{password}</code></p>
 
         <div style="text-align:center;margin:30px 0;">
             <a href="{assessment_link}" style="background:#1976d2;color:white;padding:16px 32px;text-decoration:none;border-radius:8px;font-size:18px;">
