@@ -44,8 +44,10 @@ DISC_CREDENTIAL    = os.environ.get("DISC_CREDENTIAL", "vezHgzd1EueI3clvF/1kNnMy
 HARRASON_API_URL   = os.environ.get("HARRASON_API_URL", "")
 HARRASON_CREDENTIAL = os.environ.get("HARRASON_CREDENTIAL", "")
 
-SMTP_EMAIL         = os.environ.get("SMTP_EMAIL", "info@inowix.in")
-SMTP_PASSWORD      = os.environ.get("SMTP_PASSWORD", "jxrmhihcvqlqojqa")
+SMTP_EMAIL         = os.environ.get("SMTP_EMAIL", "assessments@bodhih.com")
+SMTP_PASSWORD      = os.environ.get("SMTP_PASSWORD", "L[E0xV7bE1,Y")
+SMTP_SERVER        = os.environ.get("SMTP_SERVER", "mail.bodhih.com")
+SMTP_PORT          = int(os.environ.get("SMTP_PORT", "465"))
 FROM_NAME          = os.environ.get("FROM_NAME", "Bodhi Training Solutions")
 REPLY_TO_EMAIL     = os.environ.get("REPLY_TO_EMAIL", "support@bodhih.com")
 
@@ -59,6 +61,142 @@ ODOO_USERNAME      = os.environ.get("ODOO_USERNAME", "siddharthan@bodhih.com")
 ODOO_PASSWORD      = os.environ.get("ODOO_PASSWORD", "-KsZAxbX2!Fn36g")
 ODOO_XMLRPC_URL    = f"{ODOO_URL}/xmlrpc/2/object"
 
+
+def get_odoo_connection():
+    """Get authenticated Odoo connection"""
+    try:
+        common = xmlrpc.client.ServerProxy(f'{ODOO_URL}/xmlrpc/2/common')
+        uid = common.authenticate(ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, {})
+        if not uid:
+            logging.info(f"[FAIL] Odoo authentication failed")
+            return None, None
+        models = xmlrpc.client.ServerProxy(ODOO_XMLRPC_URL)
+        return models, uid
+    except Exception as e:
+        logging.info(f"[ERROR] Odoo connection error: {type(e).__name__}: {e}")
+        return None, None
+
+def get_odoo_order_by_identifier(order_identifier, models=None, uid=None):
+    """Find sale order by ID or name"""
+    # If models and uid are not provided, create a new connection
+    if not models or not uid:
+        models, uid = get_odoo_connection()
+        if not models or not uid:
+            return None
+    
+    try:
+        order_id_int = None
+        try:
+            order_id_int = int(order_identifier)
+        except ValueError:
+            pass
+        
+        sale_order_domain = []
+        if order_id_int:
+            sale_order_domain = [('id', '=', order_id_int)]
+        else:
+            sale_order_domain = [('name', '=', str(order_identifier))]
+        
+        sale_order_ids = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASSWORD,
+            'sale.order', 'search',
+            [sale_order_domain],
+            {'limit': 1}
+        )
+        
+        return sale_order_ids[0] if sale_order_ids else None
+    except Exception as e:
+        logging.info(f"[ERROR] Error finding order: {type(e).__name__}: {e}")
+        return None
+
+def update_odoo_order_status(order_identifier, payment_id):
+    """Update Odoo sale order status after successful payment"""
+    if not order_identifier:
+        logging.info(f"[WARN] Cannot update Odoo order - missing order identifier")
+        return False
+    
+    try:
+        models, uid = get_odoo_connection()
+        if not models or not uid:
+            logging.info(f"[WARN] Cannot update Odoo order - connection failed")
+            return False
+        
+        sale_order_id = get_odoo_order_by_identifier(order_identifier, models, uid)
+        if not sale_order_id:
+            logging.info(f"[WARN] Cannot update Odoo order - order not found: {order_identifier}")
+            return False
+        
+        logging.info(f"-> Updating Odoo order {sale_order_id} (identifier: {order_identifier})")
+        
+        # Get current order state
+        order_data = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASSWORD,
+            'sale.order', 'read',
+            [[sale_order_id]],
+            {'fields': ['state', 'name']}
+        )
+        
+        if not order_data:
+            logging.info(f"[WARN] Cannot read order {sale_order_id}")
+            return False
+        
+        current_state = order_data[0].get('state', '')
+        order_name = order_data[0].get('name', '')
+        logging.info(f"-> Current order state: {current_state}")
+        
+        # If order is still in 'draft', confirm it
+        if current_state == 'draft':
+            try:
+                # Try to confirm the sale order using action_confirm
+                models.execute_kw(
+                    ODOO_DB, uid, ODOO_PASSWORD,
+                    'sale.order', 'action_confirm',
+                    [[sale_order_id]]
+                )
+                logging.info(f"[OK] Confirmed sale order {order_name} (ID: {sale_order_id}) using action_confirm")
+            except Exception as e:
+                # If action_confirm fails, try to set state directly
+                try:
+                    logging.info(f"[INFO] action_confirm failed, trying to set state directly: {e}")
+                    models.execute_kw(
+                        ODOO_DB, uid, ODOO_PASSWORD,
+                        'sale.order', 'write',
+                        [[sale_order_id], {'state': 'sale'}]
+                    )
+                    logging.info(f"[OK] Confirmed sale order {order_name} (ID: {sale_order_id}) by setting state to 'sale'")
+                except Exception as e2:
+                    logging.info(f"[WARN] Could not confirm order - it may require manual confirmation or have validation errors: {e2}")
+        
+        # Add payment reference to order notes
+        try:
+            order_data = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASSWORD,
+                'sale.order', 'read',
+                [[sale_order_id]],
+                {'fields': ['note']}
+            )
+            
+            existing_note = order_data[0].get('note', '') if order_data else ''
+            payment_note = f"Payment ID: {payment_id}\nPayment confirmed via webhook: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            
+            if payment_note not in existing_note:
+                new_note = f"{existing_note}\n\n{payment_note}" if existing_note else payment_note
+                models.execute_kw(
+                    ODOO_DB, uid, ODOO_PASSWORD,
+                    'sale.order', 'write',
+                    [[sale_order_id], {'note': new_note}]
+                )
+                logging.info(f"[OK] Added payment reference to order {order_name}")
+        except Exception as e:
+            logging.info(f"[WARN] Could not update order notes: {e}")
+        
+        return True
+        
+    except Exception as e:
+        logging.info(f"[ERROR] Error updating Odoo order: {type(e).__name__}: {e}")
+        import traceback
+        logging.info(f"-> Traceback: {traceback.format_exc()}")
+        return False
 
 def get_odoo_products_by_order_id(order_id):
     """Query Odoo database to get products sold in a sale order"""
@@ -198,24 +336,30 @@ def extract_report_type(description):
         return "Basic"
     
     # Valid DISC types (check longer ones first to avoid partial matches)
+    # Order matters - check longer/more specific types first
     valid_types = [
-        "Career entry level",
-        "Team Build",
-        "Communication",
-        "Managerial",
-        "Advanced",
-        "Student",
-        "Career",
-        "Sales",
-        "Basic",
-        "Full"
+        "Career entry level",  # Check first before "Career"
+        "Team Build",          # Check before "Team"
+        "Communication",       # Must match exactly
+        "Managerial",          # Must match exactly
+        "Advanced",            # Must match exactly
+        "Student",             # Must match exactly
+        "Sales",               # Check before "Sale"
+        "Career",              # Check after "Career entry level"
+        "Basic",               # Default fallback
+        "Full"                 # Must match exactly
     ]
     
     desc_lower = description.lower()
+    
+    # First, check for exact matches in the description
     for disc_type in valid_types:
         if disc_type.lower() in desc_lower:
+            logging.info(f"[OK] Extracted report type '{disc_type}' from description: '{description}'")
             return disc_type
     
+    # If no match found, log it and return Basic
+    logging.info(f"[WARN] Could not extract report type from description: '{description}' - defaulting to 'Basic'")
     return "Basic"
 
 def determine_product_type_from_odoo(product_name, product_line_name):
@@ -266,26 +410,40 @@ def register_on_disc_asia(name, display_name, email, gender, report_type):
         logging.info(f"-> DISC API Call: {DISC_API_URL}")
         logging.info(f"-> Credential: {len(DISC_CREDENTIAL)} chars | {DISC_CREDENTIAL[:20]}...")
         logging.info(f"-> Request: Name={name}, Email={email}, Type={report_type}")
+        logging.info(f"-> Request Payload: {json.dumps(payload, indent=2)}")
         
         r = requests.post(DISC_API_URL, json=payload, timeout=20)
         logging.info(f"-> Response Status: {r.status_code}")
-        logging.info(f"-> Response Text: {r.text[:200]}")
+        logging.info(f"-> Response Headers: {dict(r.headers)}")
+        logging.info(f"-> Full Response Text: {r.text}")
         
         if r.status_code != 200:
-            logging.info(f"[FAIL] DISC HTTP ERROR {r.status_code}: {r.text[:300]}")
+            logging.info(f"[FAIL] DISC HTTP ERROR {r.status_code}: {r.text[:500]}")
+            return None
+        
+        try:
+            result = r.json()
+            logging.info(f"-> Response JSON: {json.dumps(result, indent=2)}")
+        except ValueError as e:
+            logging.info(f"[ERROR] DISC API returned non-JSON response: {r.text[:500]}")
             return None
             
-        result = r.json()
         if result.get("success") and result.get("respondentDetails"):
             link = result["respondentDetails"][0].get("link")
+            respondent_id = result["respondentDetails"][0].get("respondentId")
             logging.info(f"[OK] DISC SUCCESS -> Link: {link}")
+            if respondent_id:
+                logging.info(f"[OK] DISC SUCCESS -> Respondent ID: {respondent_id}")
             return link
         else:
             error = result.get('errorMessage', 'Unknown error')
-            logging.info(f"[FAIL] DISC FAILED -> {error}")
+            logging.info(f"[FAIL] DISC FAILED -> Error: {error}")
+            logging.info(f"[FAIL] DISC FAILED -> Full Response: {json.dumps(result, indent=2)}")
             return None
     except Exception as e:
         logging.info(f"[ERROR] DISC ERROR -> {type(e).__name__}: {e}")
+        import traceback
+        logging.info(f"-> Traceback: {traceback.format_exc()}")
         return None
 
 def register_on_harrason(name, display_name, email, gender, report_type):
@@ -324,12 +482,15 @@ def register_on_harrason(name, display_name, email, gender, report_type):
         logging.info(f"HARRASON EXCEPTION → {e}")
         return None
 
-def send_email(name, email, amount, payment_id, report_type, assessment_link, password):
+def send_email(name, email, amount, payment_id, report_type, assessment_link, password, product_name=None):
     msg = EmailMessage()
     msg['From'] = f"{FROM_NAME} <{SMTP_EMAIL}>"
     msg['To'] = email
     msg['Reply-To'] = REPLY_TO_EMAIL
-    msg['Subject'] = f"Your {report_type} Assessment is Ready!"
+    
+    # Use product name if available, otherwise use report type
+    display_product = product_name if product_name else f"{report_type} Assessment"
+    msg['Subject'] = f"Your {display_product} is Ready!"
 
     html = f"""
     <html>
@@ -338,7 +499,7 @@ def send_email(name, email, amount, payment_id, report_type, assessment_link, pa
         <p>Dear <strong>{name}</strong>,</p>
         <p>Thank you for purchasing:</p>
         <h3 style="background:#e3f2fd;padding:15px;border-radius:8px;text-align:center;">
-            {report_type} Assessment
+            {display_product}
         </h3>
         <p><strong>Amount Paid:</strong> ₹{amount:,.2f}<br>
            <strong>Payment ID:</strong> {payment_id}</p>
@@ -368,18 +529,25 @@ def send_email(name, email, amount, payment_id, report_type, assessment_link, pa
     msg.add_alternative(html, subtype='html')
 
     try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
+        logging.info(f"-> Connecting to SMTP server: {SMTP_SERVER}:{SMTP_PORT}")
+        logging.info(f"-> Using email: {SMTP_EMAIL}")
+        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as s:
             s.login(SMTP_EMAIL, SMTP_PASSWORD)
             s.send_message(msg)
-        logging.info(f"EMAIL SENT -> {email}")
+        logging.info(f"EMAIL SENT -> {email} (Product: {display_product})")
     except Exception as e:
         logging.info(f"EMAIL FAILED -> {e}")
+        import traceback
+        logging.info(f"-> Traceback: {traceback.format_exc()}")
 
 def process_single_user(name, display_name, email, user_email, gender, product_name, product_type, report_type, amount, payment_id, description):
     """Process registration and email for a single user"""
     # Route to appropriate API based on product type
     assessment_link = None
     api_type = None
+    
+    logging.info(f"-> Processing product: {product_name}")
+    logging.info(f"-> Product type: {product_type}, Report type: {report_type}")
     
     if 'harrason' in product_type or 'harrason' in product_name.lower():
         api_type = "HARRASON"
@@ -395,10 +563,13 @@ def process_single_user(name, display_name, email, user_email, gender, product_n
     # Send email if registration succeeded
     if assessment_link:
         password = generate_password()
-        send_email(name, user_email, amount, payment_id, report_type, assessment_link, password)
+        # Pass product_name to email so it shows the actual product purchased
+        send_email(name, user_email, amount, payment_id, report_type, assessment_link, password, product_name=product_name)
         logging.info(f"[OK] {name}: {api_type} Account Created + Email Sent to {user_email}")
+        return True
     else:
         logging.info(f"[FAIL] {name}: {api_type} REGISTRATION FAILED - No email sent")
+        return False
 
 @app.route('/razorpay-webhook', methods=['POST', 'GET', 'OPTIONS'])
 def webhook():
@@ -598,6 +769,15 @@ def webhook():
             logging.info(f"Report Type    : {report_type}")
             
             process_single_user(name, display_name, email, user_email, gender, product_name, product_type, report_type, amount, p['id'], description)
+    
+    # Update Odoo order status after successful payment processing
+    if odoo_order_identifier:
+        logging.info(f"\n-> Updating Odoo order status for: {odoo_order_identifier}")
+        update_success = update_odoo_order_status(odoo_order_identifier, p['id'])
+        if update_success:
+            logging.info(f"[OK] Odoo order status updated successfully")
+        else:
+            logging.info(f"[WARN] Could not update Odoo order status - order may need manual confirmation")
 
     logging.info("═" * 95 + "\n")
     return "OK", 200
