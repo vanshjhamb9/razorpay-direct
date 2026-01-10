@@ -91,18 +91,44 @@ def get_odoo_order_by_identifier(order_identifier, models=None, uid=None):
         except ValueError:
             pass
         
-        sale_order_domain = []
-        if order_id_int:
-            sale_order_domain = [('id', '=', order_id_int)]
-        else:
-            sale_order_domain = [('name', '=', str(order_identifier))]
+        # Try multiple variations for better matching
+        sale_order_ids = []
         
-        sale_order_ids = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
-            'sale.order', 'search',
-            [sale_order_domain],
-            {'limit': 1}
-        )
+        if order_id_int:
+            sale_order_ids = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASSWORD,
+                'sale.order', 'search',
+                [[('id', '=', order_id_int)]],
+                {'limit': 1}
+            )
+        
+        if not sale_order_ids:
+            sale_order_ids = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASSWORD,
+                'sale.order', 'search',
+                [[('name', '=', str(order_identifier))]],
+                {'limit': 1}
+            )
+        
+        if not sale_order_ids and '-' in str(order_identifier) and str(order_identifier).count('-') >= 2:
+            order_base = '-'.join(str(order_identifier).split('-')[:-1])
+            sale_order_ids = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASSWORD,
+                'sale.order', 'search',
+                [[('name', '=', order_base)]],
+                {'limit': 1}
+            )
+        
+        if not sale_order_ids and str(order_identifier).startswith('SO-'):
+            parts = str(order_identifier).split('-')
+            if len(parts) >= 2:
+                order_prefix = f"{parts[0]}-{parts[1]}"
+                sale_order_ids = models.execute_kw(
+                    ODOO_DB, uid, ODOO_PASSWORD,
+                    'sale.order', 'search',
+                    [[('name', '=like', f'{order_prefix}%')]],
+                    {'limit': 1, 'order': 'id desc'}
+                )
         
         return sale_order_ids[0] if sale_order_ids else None
     except Exception as e:
@@ -229,23 +255,54 @@ def get_odoo_products_by_order_id(order_id):
         except ValueError:
             pass
         
-        # Search for sale order
-        sale_order_domain = []
-        if order_id_int:
-            sale_order_domain = [('id', '=', order_id_int)]
-        else:
-            # Try to find by name (e.g., "SO-05200-5")
-            sale_order_domain = [('name', '=', str(order_id))]
+        # Search for sale order - try multiple variations
+        sale_order_ids = []
         
-        sale_order_ids = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
-            'sale.order', 'search',
-            [sale_order_domain],
-            {'limit': 1}
-        )
+        if order_id_int:
+            # Try by ID first
+            sale_order_ids = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASSWORD,
+                'sale.order', 'search',
+                [[('id', '=', order_id_int)]],
+                {'limit': 1}
+            )
         
         if not sale_order_ids:
-            logging.info(f"[WARN] Sale order not found in Odoo for order_id: {order_id}")
+            # Try exact name match (e.g., "SO-05231-3")
+            sale_order_ids = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASSWORD,
+                'sale.order', 'search',
+                [[('name', '=', str(order_id))]],
+                {'limit': 1}
+            )
+        
+        if not sale_order_ids:
+            # Try without suffix (e.g., "SO-05231-3" -> "SO-05231")
+            if '-' in str(order_id):
+                order_base = str(order_id).rsplit('-', 1)[0]
+                logging.info(f"-> Trying shortened order name: {order_base}")
+                sale_order_ids = models.execute_kw(
+                    ODOO_DB, uid, ODOO_PASSWORD,
+                    'sale.order', 'search',
+                    [[('name', '=', order_base)]],
+                    {'limit': 1}
+                )
+        
+        if not sale_order_ids:
+            # Try partial match (starts with)
+            if str(order_id).startswith('SO-'):
+                order_prefix = str(order_id).split('-')[0] + '-' + str(order_id).split('-')[1] if len(str(order_id).split('-')) > 1 else str(order_id)
+                logging.info(f"-> Trying partial match: {order_prefix}")
+                sale_order_ids = models.execute_kw(
+                    ODOO_DB, uid, ODOO_PASSWORD,
+                    'sale.order', 'search',
+                    [[('name', '=like', f'{order_prefix}%')]],
+                    {'limit': 1, 'order': 'id desc'}  # Get most recent matching order
+                )
+        
+        if not sale_order_ids:
+            logging.info(f"[WARN] Sale order not found in Odoo after trying multiple variations for: {order_id}")
+            logging.info(f"[INFO] Tried: exact match, shortened name, and partial match")
             return None
         
         sale_order_id = sale_order_ids[0]
@@ -571,6 +628,9 @@ def process_single_user(name, display_name, email, user_email, gender, product_n
         logging.info(f"[FAIL] {name}: {api_type} REGISTRATION FAILED - No email sent")
         return False
 
+# Track processed payments to prevent duplicates (in-memory cache, cleared on restart)
+processed_payments = set()
+
 @app.route('/razorpay-webhook', methods=['POST', 'GET', 'OPTIONS'])
 def webhook():
     # Log ALL requests to this endpoint
@@ -669,27 +729,52 @@ def webhook():
         if odoo_order_identifier:
             logging.info(f"-> Found Odoo order identifier in notes: {odoo_order_identifier}")
     
-    # Query Odoo if we have an identifier
+    # Query Odoo if we have an identifier - try with retry (orders might not be immediately available)
+    odoo_order_info = None
     if odoo_order_identifier:
         logging.info(f"\n-> Querying Odoo database for order: {odoo_order_identifier}")
+        # Try immediate lookup
         odoo_order_info = get_odoo_products_by_order_id(odoo_order_identifier)
+        
+        # If not found, wait a bit and retry (orders might be created slightly after payment)
+        if not odoo_order_info:
+            import time
+            logging.info(f"[INFO] Order not found immediately, waiting 2 seconds and retrying...")
+            time.sleep(2)
+            odoo_order_info = get_odoo_products_by_order_id(odoo_order_identifier)
+        
         if odoo_order_info:
             logging.info(f"[OK] Successfully retrieved {len(odoo_order_info.get('products', []))} product(s) from Odoo")
         else:
-            logging.info(f"[WARN] Could not retrieve products from Odoo, falling back to Razorpay/notes")
+            logging.info(f"[WARN] Could not retrieve products from Odoo after retry, falling back to Razorpay/notes")
     
-    # If no notes, try to fetch order details from Razorpay API
-    if not notes or (isinstance(notes, dict) and not notes.get('name')):
-        logging.info("-> No product info in notes, fetching from Razorpay Order API...")
+    # Try to get product name from Razorpay Order API if order not found in Odoo
+    fallback_product_name = None
+    if not odoo_order_info and order_id:
+        logging.info("-> Order not found in Odoo, trying to fetch from Razorpay Order API...")
         order_details = get_order_details(order_id)
         if order_details:
-            order_description = order_details.get('description', description)
-            logging.info(f"-> Order description from API: {order_description}")
-            product_name = order_description
-        else:
+            order_notes = order_details.get('notes', {})
+            if isinstance(order_notes, dict):
+                # Try to get product name from Razorpay order notes
+                fallback_product_name = order_notes.get('product_name') or order_notes.get('product_title')
+            if not fallback_product_name:
+                order_description = order_details.get('description', description)
+                # If description is order ID, don't use it as product name
+                if not order_description.startswith('SO-'):
+                    fallback_product_name = order_description
+                logging.info(f"-> Order description from Razorpay API: {order_description}")
+    
+    # Set initial product_name for fallback
+    if not odoo_order_info:
+        if fallback_product_name:
+            product_name = fallback_product_name
+        elif description and not description.startswith('SO-'):
             product_name = description
-    else:
-        product_name = description
+        else:
+            # Last resort: use a default name if description is just order ID
+            product_name = "Assessment Report"
+            logging.info(f"[WARN] Using default product name 'Assessment Report' (order ID {description} not a valid product name)")
     
     # Log raw payload snippet for debugging
     raw_payload = json.dumps(data, indent=2)
@@ -748,6 +833,27 @@ def webhook():
     elif not odoo_order_info:
         logging.info(f"\n-> FALLBACK: Using Razorpay/Notes data (Odoo query unavailable)")
         
+        # If product_name is just an order ID, try to get better info
+        if product_name and product_name.startswith('SO-'):
+            logging.info(f"[WARN] Product name appears to be order ID: {product_name}")
+            # Try to get product info from Razorpay order if available
+            if order_id and RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET:
+                logging.info("-> Attempting to get product info from Razorpay order...")
+                razorpay_order = get_order_details(order_id)
+                if razorpay_order:
+                    razorpay_notes = razorpay_order.get('notes', {})
+                    if isinstance(razorpay_notes, dict) and razorpay_notes.get('product_name'):
+                        product_name = razorpay_notes.get('product_name')
+                        logging.info(f"[OK] Found product name from Razorpay order: {product_name}")
+                    elif razorpay_order.get('description') and not razorpay_order.get('description').startswith('SO-'):
+                        product_name = razorpay_order.get('description')
+                        logging.info(f"[OK] Using Razorpay order description as product name: {product_name}")
+            
+            # If still just order ID, use a default
+            if product_name.startswith('SO-'):
+                product_name = "Assessment Report"
+                logging.info(f"[WARN] Using default product name 'Assessment Report' (could not find actual product name)")
+        
         # Check if notes is a list (multiple users) or dict (single user)
         if isinstance(notes, list) and len(notes) > 0:
             # Multiple users - process each one
@@ -764,6 +870,7 @@ def webhook():
                     report_type = extract_report_type(user_product_name or product_name)
                     
                     logging.info(f"\n-> Processing User: {name} ({user_email})")
+                    logging.info(f"  Product: {user_product_name} | Report Type: {report_type}")
                     process_single_user(name, display_name, email, user_email, gender, user_product_name, product_type, report_type, amount, p['id'], description)
         else:
             # Single user - original logic
