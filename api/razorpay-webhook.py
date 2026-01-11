@@ -93,13 +93,34 @@ def generate_password():
 def register_on_disc_asia(name, display_name, email, gender, report_type):
     payload = {"credentials": {"encryptedPassword": DISC_CREDENTIAL}, "respondentDetails": [{"name": name, "displayName": display_name, "gender": gender.title(), "eMailAddress": email, "type": report_type}], "transactionDetails": {"transactionId": 1, "transactionDate": datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'), "isSuccessful": True}}
     try:
+        logger.info(f"-> DISC API Call: {DISC_API_URL}")
+        logger.info(f"-> Request: Name={name}, Email={email}, Type={report_type}")
+        logger.info(f"-> Request Payload: {json.dumps(payload, indent=2)}")
+        
         r = requests.post(DISC_API_URL, json=payload, timeout=20)
+        logger.info(f"-> Response Status: {r.status_code}")
+        logger.info(f"-> Full Response Text: {r.text}")
+        
         if r.status_code == 200:
             result = r.json()
+            logger.info(f"-> Response JSON: {json.dumps(result, indent=2)}")
             if result.get("success") and result.get("respondentDetails"):
-                return result["respondentDetails"][0].get("link")
+                link = result["respondentDetails"][0].get("link")
+                respondent_id = result["respondentDetails"][0].get("respondentId")
+                logger.info(f"[OK] DISC SUCCESS -> Link: {link}")
+                if respondent_id:
+                    logger.info(f"[OK] DISC SUCCESS -> Respondent ID: {respondent_id}")
+                return link
+            else:
+                error = result.get('errorMessage', 'Unknown error')
+                logger.error(f"[FAIL] DISC FAILED -> Error: {error}")
+        else:
+            logger.error(f"[FAIL] DISC HTTP ERROR {r.status_code}: {r.text[:500]}")
         return None
-    except:
+    except Exception as e:
+        logger.error(f"[ERROR] DISC ERROR -> {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"-> Traceback: {traceback.format_exc()}")
         return None
 
 def register_on_harrason(name, display_name, email, gender, report_type):
@@ -115,13 +136,17 @@ def register_on_harrason(name, display_name, email, gender, report_type):
     except:
         return None
 
-def send_email(name, email, amount, payment_id, report_type, assessment_link, password):
+def send_email(name, email, amount, payment_id, report_type, assessment_link, password, product_name=None):
     msg = EmailMessage()
     msg['From'] = f"{FROM_NAME} <{SMTP_EMAIL}>"
     msg['To'] = email
     msg['Reply-To'] = REPLY_TO_EMAIL
-    msg['Subject'] = f"Your {report_type} Assessment is Ready!"
-    html = f"""<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:30px auto;padding:20px;background:#f9f9f9;border-radius:10px;"><h2 style="color:#2c3e50;text-align:center;">Payment Confirmed!</h2><p>Dear <strong>{name}</strong>,</p><p>Thank you for purchasing:</p><h3 style="background:#e3f2fd;padding:15px;border-radius:8px;text-align:center;">{report_type} Assessment</h3><p><strong>Amount Paid:</strong> ₹{amount:,.2f}<br><strong>Payment ID:</strong> {payment_id}</p><h3>Your Assessment Access</h3><p style="margin-bottom:10px;"><strong>Login Email:</strong> {email}</p><p style="margin-top:10px;margin-bottom:20px;"><strong>Password:</strong> <code style="background:#eee;padding:8px;font-size:15px;">{password}</code></p><div style="text-align:center;margin:30px 0;"><a href="{assessment_link}" style="background:#1976d2;color:white;padding:16px 32px;text-decoration:none;border-radius:8px;font-size:18px;">Start Your Assessment Now</a></div><p style="background:#fff3cd;padding:15px;border-radius:8px;">This link is unique to you. Keep this email safe.</p><p style="font-size:12px;color:#777;text-align:center;">Need help? Reply to this email.<br>Bodhi Training Solutions | www.bodhih.com</p></body></html>"""
+    
+    # Use product name if available, otherwise use report type
+    display_product = product_name if product_name else f"{report_type} Assessment"
+    msg['Subject'] = f"Your {display_product} is Ready!"
+    
+    html = f"""<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:30px auto;padding:20px;background:#f9f9f9;border-radius:10px;"><h2 style="color:#2c3e50;text-align:center;">Payment Confirmed!</h2><p>Dear <strong>{name}</strong>,</p><p>Thank you for purchasing:</p><h3 style="background:#e3f2fd;padding:15px;border-radius:8px;text-align:center;">{display_product}</h3><p><strong>Amount Paid:</strong> ₹{amount:,.2f}<br><strong>Payment ID:</strong> {payment_id}</p><h3>Your Assessment Access</h3><p style="margin-bottom:10px;"><strong>Login Email:</strong> {email}</p><p style="margin-top:10px;margin-bottom:20px;"><strong>Password:</strong> <code style="background:#eee;padding:8px;font-size:15px;">{password}</code></p><div style="text-align:center;margin:30px 0;"><a href="{assessment_link}" style="background:#1976d2;color:white;padding:16px 32px;text-decoration:none;border-radius:8px;font-size:18px;">Start Your Assessment Now</a></div><p style="background:#fff3cd;padding:15px;border-radius:8px;">This link is unique to you. Keep this email safe.</p><p style="font-size:12px;color:#777;text-align:center;">Need help? Reply to this email.<br>Bodhi Training Solutions | www.bodhih.com</p></body></html>"""
     msg.set_content("HTML email required.")
     msg.add_alternative(html, subtype='html')
     try:
@@ -130,7 +155,7 @@ def send_email(name, email, amount, payment_id, report_type, assessment_link, pa
         with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as s:
             s.login(SMTP_EMAIL, SMTP_PASSWORD)
             s.send_message(msg)
-        logger.info(f"EMAIL SENT -> {email}")
+        logger.info(f"EMAIL SENT -> {email} (Product: {display_product})")
     except Exception as e:
         logger.error(f"EMAIL FAILED -> {e}")
         import traceback
@@ -140,8 +165,9 @@ def process_single_user(name, display_name, email, user_email, gender, product_n
     assessment_link = register_on_harrason(name, display_name, email, gender, report_type) if ('harrason' in product_type or 'harrason' in product_name.lower()) else register_on_disc_asia(name, display_name, email, gender, report_type)
     if assessment_link:
         password = generate_password()
-        send_email(name, user_email, amount, payment_id, report_type, assessment_link, password)
-        logger.info(f"[OK] {name}: Account Created + Email Sent")
+        # Pass product_name to email so it shows the actual product purchased
+        send_email(name, user_email, amount, payment_id, report_type, assessment_link, password, product_name=product_name)
+        logger.info(f"[OK] {name}: Account Created + Email Sent (Product: {product_name}, Report Type: {report_type})")
 
 # Simple function handler - Vercel might accept this if it's exported correctly
 def handler(request):
@@ -211,9 +237,15 @@ def handler(request):
                         user_email = user_data.get('user_email', email)
                         gender = user_data.get('gender', 'Male')
                         product = products[idx] if idx < len(products) else products[0]
-                        product_name = product.get('product_name', product.get('line_name', description))
+                        # Get product name - prefer product_name, then line_name, avoid order ID
+                        product_name = product.get('product_name') or product.get('line_name') or 'Assessment Report'
+                        # Don't use order ID as product name
+                        if product_name.startswith('SO-'):
+                            product_name = product.get('line_name') or 'Assessment Report'
                         product_type = determine_product_type_from_odoo(product.get('product_name', ''), product.get('line_name', ''))
                         report_type = extract_report_type(product_name)
+                        logger.info(f"-> Processing User: {name} ({user_email})")
+                        logger.info(f"  Product: {product_name} | Type: {product_type.upper()} | Report: {report_type}")
                         process_single_user(name, name, email, user_email, gender, product_name, product_type, report_type, amount, p['id'], description)
             else:
                 name = notes.get('name', p.get('contact', 'Customer')) if isinstance(notes, dict) else 'Customer'
@@ -221,9 +253,15 @@ def handler(request):
                 user_email = (notes.get('user_email') if isinstance(notes, dict) else None) or email
                 gender = notes.get('gender', 'Male') if isinstance(notes, dict) else 'Male'
                 for product in products:
-                    product_name = product.get('product_name', product.get('line_name', description))
+                    # Get product name - prefer product_name, then line_name, avoid order ID
+                    product_name = product.get('product_name') or product.get('line_name') or 'Assessment Report'
+                    # Don't use order ID as product name
+                    if product_name.startswith('SO-'):
+                        product_name = product.get('line_name') or 'Assessment Report'
                     product_type = determine_product_type_from_odoo(product.get('product_name', ''), product.get('line_name', ''))
                     report_type = extract_report_type(product_name)
+                    logger.info(f"\n-> Processing Product: {product_name}")
+                    logger.info(f"  Type: {product_type.upper()} | Report: {report_type}")
                     process_single_user(name, name, email, user_email, gender, product_name, product_type, report_type, amount, p['id'], description)
         else:
             if isinstance(notes, list) and len(notes) > 0:
@@ -233,9 +271,14 @@ def handler(request):
                         email = user_data.get('email', p.get('email', 'no-email@bodhih.com'))
                         user_email = user_data.get('user_email', email)
                         gender = user_data.get('gender', 'Male')
-                        user_product_name = user_data.get('product_name', description)
+                        user_product_name = user_data.get('product_name', 'Assessment Report')
+                        # Don't use order ID as product name
+                        if user_product_name.startswith('SO-'):
+                            user_product_name = 'Assessment Report'
                         product_type = user_data.get('product_type', '').lower()
-                        report_type = extract_report_type(user_product_name or description)
+                        report_type = extract_report_type(user_product_name or 'Assessment Report')
+                        logger.info(f"\n-> Processing User: {name} ({user_email})")
+                        logger.info(f"  Product: {user_product_name} | Report Type: {report_type}")
                         process_single_user(name, name, email, user_email, gender, user_product_name, product_type, report_type, amount, p['id'], description)
             else:
                 name = notes.get('name', p.get('contact', 'Customer')) if isinstance(notes, dict) else 'Customer'
@@ -243,8 +286,14 @@ def handler(request):
                 user_email = (notes.get('user_email') if isinstance(notes, dict) else None) or email
                 gender = notes.get('gender', 'Male') if isinstance(notes, dict) else 'Male'
                 product_type = (notes.get('product_type', '') if isinstance(notes, dict) else '').lower()
-                report_type = extract_report_type(description)
-                process_single_user(name, name, email, user_email, gender, description, product_type, report_type, amount, p['id'], description)
+                # Don't use order ID as product name - use default instead
+                product_name = 'Assessment Report' if description.startswith('SO-') else (description or 'Assessment Report')
+                report_type = extract_report_type(product_name)
+                logger.info(f"Customer Name  : {name}")
+                logger.info(f"Email          : {email}")
+                logger.info(f"Product Name   : {product_name or '—'}")
+                logger.info(f"Report Type    : {report_type}")
+                process_single_user(name, name, email, user_email, gender, product_name, product_type, report_type, amount, p['id'], description)
         
         return {'statusCode': 200, 'headers': {'Content-Type': 'text/plain'}, 'body': 'OK'}
     except Exception as e:
