@@ -750,9 +750,15 @@ def webhook():
         # If not found, wait a bit and retry (orders might be created slightly after payment)
         if not odoo_order_info:
             import time
-            logging.info(f"[INFO] Order not found immediately, waiting 2 seconds and retrying...")
-            time.sleep(2)
+            logging.info(f"[INFO] Order not found immediately, waiting 5 seconds and retrying...")
+            time.sleep(5)  # Increased to 5 seconds for better reliability
             odoo_order_info = get_odoo_products_by_order_id(odoo_order_identifier)
+            
+            # Try one more time if still not found
+            if not odoo_order_info:
+                logging.info(f"[INFO] Order still not found, waiting another 5 seconds for final retry...")
+                time.sleep(5)
+                odoo_order_info = get_odoo_products_by_order_id(odoo_order_identifier)
         
         if odoo_order_info:
             logging.info(f"[OK] Successfully retrieved {len(odoo_order_info.get('products', []))} product(s) from Odoo")
