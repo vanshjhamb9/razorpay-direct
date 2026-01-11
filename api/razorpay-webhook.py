@@ -16,13 +16,6 @@ from email.message import EmailMessage
 import secrets
 import string
 
-# #region agent log
-log_path = r'c:\Users\asus\OneDrive\Desktop\Oddo auto\.cursor\debug.log'
-try:
-    with open(log_path, 'a') as f:
-        f.write(json.dumps({"sessionId":"debug-session","runId":"run4","hypothesisId":"A","location":"api/razorpay-webhook.py:20","message":"Module loading - callable class","data":{"python_version":sys.version},"timestamp":int(__import__('time').time()*1000)}) + '\n')
-except: pass
-# #endregion
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
@@ -174,13 +167,6 @@ def handler(request):
     Vercel serverless function handler
     Hypothesis: Simple function format works if exported correctly
     """
-    # #region agent log
-    try:
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run4","hypothesisId":"A","location":"api/razorpay-webhook.py:handler","message":"Handler function called","data":{"request_type":type(request).__name__},"timestamp":int(__import__('time').time()*1000)}) + '\n')
-    except: pass
-    # #endregion
-    
     logger.info("=" * 80)
     logger.info("WEBHOOK HANDLER CALLED")
     logger.info("=" * 80)
