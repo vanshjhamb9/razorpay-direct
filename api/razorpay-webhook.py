@@ -302,12 +302,3 @@ def handler(request):
         logger.error(traceback.format_exc())
         return {'statusCode': 500, 'headers': {'Content-Type': 'text/plain'}, 'body': f'Error: {str(e)}'}
 
-# #region agent log
-try:
-    with open(log_path, 'a') as f:
-        f.write(json.dumps({"sessionId":"debug-session","runId":"run4","hypothesisId":"H","location":"api/razorpay-webhook.py:end","message":"Module loaded, handler function defined","data":{"handler_type":type(handler).__name__,"is_function":callable(handler)},"timestamp":int(__import__('time').time()*1000)}) + '\n')
-except: pass
-# #endregion
-
-logger.info(f"Handler type: {type(handler)}")
-logger.info(f"Is callable: {callable(handler)}")
