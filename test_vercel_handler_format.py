@@ -34,3 +34,5 @@ print(f"HandlerClass is subclass: {issubclass(HandlerClass, BaseHTTPRequestHandl
 # The error says it's checking issubclass(base, BaseHTTPRequestHandler)
 # So Vercel expects 'base' to be a class, not an instance or function
 
+
+

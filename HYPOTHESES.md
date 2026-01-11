@@ -50,3 +50,5 @@
 4. Analyze which hypothesis is confirmed
 5. Fix based on evidence
 
+
+
