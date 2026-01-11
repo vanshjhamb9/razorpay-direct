@@ -1,6 +1,6 @@
 """
 Vercel serverless function for /razorpay-webhook
-Callable class handler - works as both class and function
+Standalone handler function for Razorpay webhooks
 """
 
 import json
@@ -169,7 +169,6 @@ def process_single_user(name, display_name, email, user_email, gender, product_n
         send_email(name, user_email, amount, payment_id, report_type, assessment_link, password, product_name=product_name)
         logger.info(f"[OK] {name}: Account Created + Email Sent (Product: {product_name}, Report Type: {report_type})")
 
-# Simple function handler - Vercel might accept this if it's exported correctly
 def handler(request):
     """
     Vercel serverless function handler
