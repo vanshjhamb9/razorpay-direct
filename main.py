@@ -479,7 +479,7 @@ def register_on_disc_asia(name, display_name, email, gender, report_type):
             return None
             
         try:
-        result = r.json()
+            result = r.json()
             logging.info(f"-> Response JSON: {json.dumps(result, indent=2)}")
         except ValueError as e:
             logging.info(f"[ERROR] DISC API returned non-JSON response: {r.text[:500]}")
