@@ -49,7 +49,7 @@ SMTP_PASSWORD      = os.environ.get("SMTP_PASSWORD", "L[E0xV7bE1,Y")
 SMTP_SERVER        = os.environ.get("SMTP_SERVER", "mail.bodhih.com")
 SMTP_PORT          = int(os.environ.get("SMTP_PORT", "465"))
 FROM_NAME          = os.environ.get("FROM_NAME", "Bodhi Training Solutions")
-REPLY_TO_EMAIL     = os.environ.get("REPLY_TO_EMAIL", "support@bodhih.com")
+REPLY_TO_EMAIL     = os.environ.get("REPLY_TO_EMAIL", "info@inowix.in")
 
 RAZORPAY_KEY_ID    = os.environ.get("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
