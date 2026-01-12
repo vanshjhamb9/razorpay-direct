@@ -10,10 +10,6 @@
     {
       "src": "/razorpay-webhook",
       "dest": "/api/razorpay-webhook.py"
-    },
-    {
-      "src": "/test-odoo",
-      "dest": "/api/test-odoo.py"
     }
   ]
 }
