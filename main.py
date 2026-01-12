@@ -588,14 +588,41 @@ def send_email(name, email, amount, payment_id, report_type, assessment_link, pa
     try:
         logging.info(f"-> Connecting to SMTP server: {SMTP_SERVER}:{SMTP_PORT}")
         logging.info(f"-> Using email: {SMTP_EMAIL}")
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=30) as s:
-            s.login(SMTP_EMAIL, SMTP_PASSWORD)
-            s.send_message(msg)
-        logging.info(f"EMAIL SENT -> {email} (Product: {display_product})")
+        
+        # Try SMTP_SSL first (port 465)
+        if SMTP_PORT == 465:
+            try:
+                with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=30) as s:
+                    s.login(SMTP_EMAIL, SMTP_PASSWORD)
+                    s.send_message(msg)
+                logging.info(f"EMAIL SENT -> {email} (Product: {display_product})")
+                return True
+            except (TimeoutError, OSError) as e:
+                logging.warning(f"SMTP_SSL failed: {e}. Trying STARTTLS on port 587...")
+                # Fallback to STARTTLS on port 587
+                try:
+                    with smtplib.SMTP(SMTP_SERVER, 587, timeout=30) as s:
+                        s.starttls()
+                        s.login(SMTP_EMAIL, SMTP_PASSWORD)
+                        s.send_message(msg)
+                    logging.info(f"EMAIL SENT -> {email} (Product: {display_product}) via STARTTLS")
+                    return True
+                except Exception as e2:
+                    logging.error(f"STARTTLS also failed: {e2}")
+                    raise e
+        else:
+            # Use regular SMTP with STARTTLS for port 587
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30) as s:
+                s.starttls()
+                s.login(SMTP_EMAIL, SMTP_PASSWORD)
+                s.send_message(msg)
+            logging.info(f"EMAIL SENT -> {email} (Product: {display_product})")
+            return True
     except Exception as e:
-        logging.info(f"EMAIL FAILED -> {e}")
+        logging.error(f"EMAIL FAILED -> {e}")
         import traceback
-        logging.info(f"-> Traceback: {traceback.format_exc()}")
+        logging.error(f"-> Traceback: {traceback.format_exc()}")
+        return False
 
 def process_single_user(name, display_name, email, user_email, gender, product_name, product_type, report_type, amount, payment_id, description):
     """Process registration and email for a single user"""
