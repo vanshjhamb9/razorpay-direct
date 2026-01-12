@@ -776,7 +776,7 @@ def webhook():
                 # Try to get product name from Razorpay order notes
                 fallback_product_name = order_notes.get('product_name') or order_notes.get('product_title')
             if not fallback_product_name:
-            order_description = order_details.get('description', description)
+                order_description = order_details.get('description', description)
                 # If description is order ID, don't use it as product name
                 if not order_description.startswith('SO-'):
                     fallback_product_name = order_description
