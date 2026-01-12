@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: bodhih-webhook
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn main:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DISC_API_URL
+        sync: false
+      - key: DISC_CREDENTIAL
+        sync: false
+      - key: HARRASON_API_URL
+        sync: false
+      - key: HARRASON_CREDENTIAL
+        sync: false
+      - key: SMTP_EMAIL
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_SERVER
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: FROM_NAME
+        sync: false
+      - key: REPLY_TO_EMAIL
+        sync: false
+      - key: ODOO_URL
+        sync: false
+      - key: ODOO_DB
+        sync: false
+      - key: ODOO_USERNAME
+        sync: false
+      - key: ODOO_PASSWORD
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false

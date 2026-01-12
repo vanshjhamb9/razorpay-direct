@@ -17,7 +17,7 @@ import xmlrpc.client
 
 app = Flask(__name__)
 
-# Configure logging for Vercel - ensure it goes to stdout
+# Configure logging - ensure it goes to stdout
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -269,12 +269,12 @@ def get_odoo_products_by_order_id(order_id):
         
         if not sale_order_ids:
             # Try exact name match (e.g., "SO-05231-3")
-            sale_order_ids = models.execute_kw(
-                ODOO_DB, uid, ODOO_PASSWORD,
-                'sale.order', 'search',
+        sale_order_ids = models.execute_kw(
+            ODOO_DB, uid, ODOO_PASSWORD,
+            'sale.order', 'search',
                 [[('name', '=', str(order_id))]],
-                {'limit': 1}
-            )
+            {'limit': 1}
+        )
         
         if not sale_order_ids:
             # Try without suffix (e.g., "SO-05231-3" -> "SO-05231")
@@ -477,9 +477,9 @@ def register_on_disc_asia(name, display_name, email, gender, report_type):
         if r.status_code != 200:
             logging.info(f"[FAIL] DISC HTTP ERROR {r.status_code}: {r.text[:500]}")
             return None
-        
+            
         try:
-            result = r.json()
+        result = r.json()
             logging.info(f"-> Response JSON: {json.dumps(result, indent=2)}")
         except ValueError as e:
             logging.info(f"[ERROR] DISC API returned non-JSON response: {r.text[:500]}")
@@ -675,11 +675,11 @@ def webhook():
     if not data or event_type not in ['payment.captured', 'order.paid']:
         logging.info(f"[SKIP] Event is '{event_type}' - only processing 'payment.captured' or 'order.paid' events")
         return "ok", 200
-    
+
     # Extract payment entity from payload
     # Both events have payment in payload.payment.entity
     if 'payload' in data and 'payment' in data['payload'] and 'entity' in data['payload']['payment']:
-        p = data['payload']['payment']['entity']
+    p = data['payload']['payment']['entity']
         logging.info(f"[OK] Processing event: {event_type}")
     else:
         logging.info(f"[SKIP] Payment entity not found in payload for event: {event_type}")
@@ -776,7 +776,7 @@ def webhook():
                 # Try to get product name from Razorpay order notes
                 fallback_product_name = order_notes.get('product_name') or order_notes.get('product_title')
             if not fallback_product_name:
-                order_description = order_details.get('description', description)
+            order_description = order_details.get('description', description)
                 # If description is order ID, don't use it as product name
                 if not order_description.startswith('SO-'):
                     fallback_product_name = order_description
@@ -788,7 +788,7 @@ def webhook():
             product_name = fallback_product_name
         elif description and not description.startswith('SO-'):
             product_name = description
-        else:
+    else:
             # Last resort: use a default name if description is just order ID
             product_name = "Assessment Report"
             logging.info(f"[WARN] Using default product name 'Assessment Report' (order ID {description} not a valid product name)")
@@ -1000,12 +1000,7 @@ def catch_all(path=''):
     # For other routes, return 404
     return {"error": "Not Found", "path": f"/{path}"}, 404
 
-# For Vercel: Export the Flask app directly
-# Vercel's @vercel/python automatically handles Flask WSGI apps
-# The handler variable is what Vercel looks for
 # Run locally if executed directly
+# For production (Render), use: gunicorn main:app
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
-# Note: For Vercel, handler is exported in api/*.py files
-# This allows the Flask app to work both locally and on Vercel
