@@ -679,7 +679,7 @@ def webhook():
     # Extract payment entity from payload
     # Both events have payment in payload.payment.entity
     if 'payload' in data and 'payment' in data['payload'] and 'entity' in data['payload']['payment']:
-    p = data['payload']['payment']['entity']
+        p = data['payload']['payment']['entity']
         logging.info(f"[OK] Processing event: {event_type}")
     else:
         logging.info(f"[SKIP] Payment entity not found in payload for event: {event_type}")
