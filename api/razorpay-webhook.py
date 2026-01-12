@@ -1,8 +1,3 @@
-"""
-Vercel serverless function for /razorpay-webhook
-Standalone handler function for Razorpay webhooks
-"""
-
 import json
 import sys
 import os
@@ -163,10 +158,6 @@ def process_single_user(name, display_name, email, user_email, gender, product_n
         logger.info(f"[OK] {name}: Account Created + Email Sent (Product: {product_name}, Report Type: {report_type})")
 
 def handler(request):
-    """
-    Vercel serverless function handler
-    Hypothesis: Simple function format works if exported correctly
-    """
     logger.info("=" * 80)
     logger.info("WEBHOOK HANDLER CALLED")
     logger.info("=" * 80)
