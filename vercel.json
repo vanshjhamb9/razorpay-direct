@@ -14,10 +14,6 @@
     {
       "src": "/test-odoo",
       "dest": "/api/test-odoo.py"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.py"
     }
   ]
 }
