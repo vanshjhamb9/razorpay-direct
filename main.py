@@ -269,12 +269,12 @@ def get_odoo_products_by_order_id(order_id):
         
         if not sale_order_ids:
             # Try exact name match (e.g., "SO-05231-3")
-        sale_order_ids = models.execute_kw(
-            ODOO_DB, uid, ODOO_PASSWORD,
-            'sale.order', 'search',
+            sale_order_ids = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASSWORD,
+                'sale.order', 'search',
                 [[('name', '=', str(order_id))]],
-            {'limit': 1}
-        )
+                {'limit': 1}
+            )
         
         if not sale_order_ids:
             # Try without suffix (e.g., "SO-05231-3" -> "SO-05231")
