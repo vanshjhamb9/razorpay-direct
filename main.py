@@ -588,7 +588,7 @@ def send_email(name, email, amount, payment_id, report_type, assessment_link, pa
     try:
         logging.info(f"-> Connecting to SMTP server: {SMTP_SERVER}:{SMTP_PORT}")
         logging.info(f"-> Using email: {SMTP_EMAIL}")
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as s:
+        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=30) as s:
             s.login(SMTP_EMAIL, SMTP_PASSWORD)
             s.send_message(msg)
         logging.info(f"EMAIL SENT -> {email} (Product: {display_product})")
