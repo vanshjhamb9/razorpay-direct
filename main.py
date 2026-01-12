@@ -14,6 +14,8 @@ import json
 import re
 import sys
 import xmlrpc.client
+import socket
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -61,6 +63,25 @@ ODOO_USERNAME      = os.environ.get("ODOO_USERNAME", "siddharthan@bodhih.com")
 ODOO_PASSWORD      = os.environ.get("ODOO_PASSWORD", "-KsZAxbX2!Fn36g")
 ODOO_XMLRPC_URL    = f"{ODOO_URL}/xmlrpc/2/object"
 
+# Debug logging path
+DEBUG_LOG_PATH = r"c:\Users\asus\OneDrive\Desktop\Oddo auto\.cursor\debug.log"
+
+def write_debug_log(location, message, data, hypothesis_id=None):
+    """Write debug log in NDJSON format"""
+    try:
+        log_entry = {
+            "sessionId": "debug-session",
+            "runId": "smtp-debug",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(datetime.now().timestamp() * 1000)
+        }
+        with open(DEBUG_LOG_PATH, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(log_entry) + '\n')
+    except Exception:
+        pass  # Silent fail for debug logs
 
 def get_odoo_connection():
     """Get authenticated Odoo connection"""
@@ -540,6 +561,14 @@ def register_on_harrason(name, display_name, email, gender, report_type):
         return None
 
 def send_email(name, email, amount, payment_id, report_type, assessment_link, password, product_name=None):
+    location = "main.py:send_email"
+    write_debug_log(location, "send_email called", {
+        "to": email,
+        "smtp_server": SMTP_SERVER,
+        "smtp_port": SMTP_PORT,
+        "smtp_email": SMTP_EMAIL
+    }, "A")
+    
     msg = EmailMessage()
     msg['From'] = f"{FROM_NAME} <{SMTP_EMAIL}>"
     msg['To'] = email
@@ -589,39 +618,134 @@ def send_email(name, email, amount, payment_id, report_type, assessment_link, pa
         logging.info(f"-> Connecting to SMTP server: {SMTP_SERVER}:{SMTP_PORT}")
         logging.info(f"-> Using email: {SMTP_EMAIL}")
         
+        # Debug: Test DNS resolution
+        write_debug_log(location, "Testing DNS resolution", {"host": SMTP_SERVER}, "B")
+        try:
+            ip = socket.gethostbyname(SMTP_SERVER)
+            logging.info(f"-> DNS resolved: {SMTP_SERVER} -> {ip}")
+            write_debug_log(location, "DNS resolution successful", {"ip": ip}, "B")
+        except socket.gaierror as e:
+            logging.error(f"-> DNS resolution failed: {e}")
+            write_debug_log(location, "DNS resolution failed", {"error": str(e)}, "B")
+            raise
+        
+        # Debug: Test port connectivity
+        write_debug_log(location, "Testing port connectivity", {"host": SMTP_SERVER, "port": SMTP_PORT}, "C")
+        try:
+            sock = socket.create_connection((SMTP_SERVER, SMTP_PORT), timeout=10)
+            sock.close()
+            logging.info(f"-> Port {SMTP_PORT} is reachable")
+            write_debug_log(location, "Port connectivity successful", {"port": SMTP_PORT}, "C")
+        except (socket.timeout, OSError) as e:
+            logging.error(f"-> Port {SMTP_PORT} not reachable: {e}")
+            write_debug_log(location, "Port connectivity failed", {"error": str(e), "port": SMTP_PORT}, "C")
+            raise
+        
         # Try SMTP_SSL first (port 465)
         if SMTP_PORT == 465:
+            write_debug_log(location, "Attempting SMTP_SSL connection", {"port": SMTP_PORT}, "D")
             try:
+                logging.info(f"-> Attempting SMTP_SSL connection on port {SMTP_PORT}...")
                 with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=30) as s:
+                    write_debug_log(location, "SMTP_SSL connection established", {}, "D")
+                    logging.info(f"-> SMTP_SSL connection successful")
+                    
+                    write_debug_log(location, "Attempting SMTP authentication", {"email": SMTP_EMAIL}, "E")
                     s.login(SMTP_EMAIL, SMTP_PASSWORD)
+                    write_debug_log(location, "SMTP authentication successful", {}, "E")
+                    logging.info(f"-> Authentication successful")
+                    
+                    write_debug_log(location, "Sending email message", {"to": email}, "F")
                     s.send_message(msg)
+                    write_debug_log(location, "Email sent successfully", {}, "F")
                 logging.info(f"EMAIL SENT -> {email} (Product: {display_product})")
                 return True
             except (TimeoutError, OSError) as e:
                 logging.warning(f"SMTP_SSL failed: {e}. Trying STARTTLS on port 587...")
+                write_debug_log(location, "SMTP_SSL failed, trying fallback", {"error": str(e), "error_type": type(e).__name__}, "D")
                 # Fallback to STARTTLS on port 587
                 try:
+                    write_debug_log(location, "Attempting STARTTLS fallback", {"port": 587}, "D")
                     with smtplib.SMTP(SMTP_SERVER, 587, timeout=30) as s:
+                        write_debug_log(location, "SMTP connection established for STARTTLS", {}, "D")
                         s.starttls()
+                        write_debug_log(location, "STARTTLS successful", {}, "D")
                         s.login(SMTP_EMAIL, SMTP_PASSWORD)
+                        write_debug_log(location, "STARTTLS authentication successful", {}, "E")
                         s.send_message(msg)
+                        write_debug_log(location, "Email sent via STARTTLS", {}, "F")
                     logging.info(f"EMAIL SENT -> {email} (Product: {display_product}) via STARTTLS")
                     return True
                 except Exception as e2:
                     logging.error(f"STARTTLS also failed: {e2}")
+                    write_debug_log(location, "STARTTLS fallback failed", {"error": str(e2), "error_type": type(e2).__name__}, "D")
                     raise e
         else:
             # Use regular SMTP with STARTTLS for port 587
+            write_debug_log(location, "Attempting SMTP with STARTTLS", {"port": SMTP_PORT}, "D")
             with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30) as s:
+                write_debug_log(location, "SMTP connection established", {}, "D")
                 s.starttls()
+                write_debug_log(location, "STARTTLS successful", {}, "D")
                 s.login(SMTP_EMAIL, SMTP_PASSWORD)
+                write_debug_log(location, "SMTP authentication successful", {}, "E")
                 s.send_message(msg)
+                write_debug_log(location, "Email sent successfully", {}, "F")
             logging.info(f"EMAIL SENT -> {email} (Product: {display_product})")
             return True
-    except Exception as e:
-        logging.error(f"EMAIL FAILED -> {e}")
+    except smtplib.SMTPAuthenticationError as e:
+        logging.error(f"EMAIL FAILED -> Authentication error: {e}")
+        write_debug_log(location, "SMTP authentication failed", {"error": str(e)}, "E")
         import traceback
         logging.error(f"-> Traceback: {traceback.format_exc()}")
+        return False
+    except Exception as e:
+        error_msg = str(e)
+        error_type = type(e).__name__
+        logging.error(f"EMAIL FAILED -> {e}")
+        write_debug_log(location, "SMTP failed, trying SendGrid fallback", {
+            "error": error_msg,
+            "error_type": error_type
+        }, "A")
+        
+        # Fallback to SendGrid if SMTP fails (for Render free tier)
+        sendgrid_api_key = os.environ.get("SENDGRID_API_KEY", "")
+        if sendgrid_api_key and ("unreachable" in error_msg.lower() or "timeout" in error_msg.lower() or "network" in error_msg.lower()):
+            logging.info("-> SMTP blocked, trying SendGrid API...")
+            try:
+                from sendgrid import SendGridAPIClient
+                from sendgrid.helpers.mail import Mail
+                
+                message = Mail(
+                    from_email=(SMTP_EMAIL, FROM_NAME),
+                    to_emails=email,
+                    subject=f"Your {display_product} is Ready!",
+                    html_content=html
+                )
+                message.reply_to = REPLY_TO_EMAIL
+                
+                sg = SendGridAPIClient(sendgrid_api_key)
+                response = sg.send(message)
+                
+                if response.status_code in [200, 202]:
+                    logging.info(f"EMAIL SENT via SendGrid -> {email} (Product: {display_product})")
+                    write_debug_log(location, "Email sent via SendGrid", {"status_code": response.status_code}, "A")
+                    return True
+                else:
+                    logging.error(f"SendGrid failed: {response.status_code} - {response.body}")
+                    write_debug_log(location, "SendGrid failed", {"status_code": response.status_code}, "A")
+            except ImportError:
+                logging.warning("-> SendGrid not installed. Install with: pip install sendgrid")
+            except Exception as sg_error:
+                logging.error(f"SendGrid error: {sg_error}")
+        
+        write_debug_log(location, "Email sending failed", {
+            "error": error_msg,
+            "error_type": error_type
+        }, "A")
+        import traceback
+        logging.error(f"-> Traceback: {traceback.format_exc()}")
+        write_debug_log(location, "Traceback", {"traceback": traceback.format_exc()}, "A")
         return False
 
 def process_single_user(name, display_name, email, user_email, gender, product_name, product_type, report_type, amount, payment_id, description):
