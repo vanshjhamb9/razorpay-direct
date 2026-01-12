@@ -11,12 +11,9 @@ from email.message import EmailMessage
 import secrets
 import string
 
-
-# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
-# Environment variables
 ODOO_URL = os.environ.get("ODOO_URL", "https://bodhih.odoo.com")
 ODOO_DB = os.environ.get("ODOO_DB", "bodhih")
 ODOO_USERNAME = os.environ.get("ODOO_USERNAME", "siddharthan@bodhih.com")
@@ -33,7 +30,6 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))
 FROM_NAME = os.environ.get("FROM_NAME", "Bodhi Training Solutions")
 REPLY_TO_EMAIL = os.environ.get("REPLY_TO_EMAIL", "support@bodhih.com")
 
-# Helper functions (abbreviated for space - same logic as before)
 def get_odoo_products_by_order_id(order_id):
     if not order_id or not ODOO_URL or not ODOO_DB:
         return None
@@ -84,11 +80,9 @@ def register_on_disc_asia(name, display_name, email, gender, report_type):
         logger.info(f"-> DISC API Call: {DISC_API_URL}")
         logger.info(f"-> Request: Name={name}, Email={email}, Type={report_type}")
         logger.info(f"-> Request Payload: {json.dumps(payload, indent=2)}")
-        
         r = requests.post(DISC_API_URL, json=payload, timeout=20)
         logger.info(f"-> Response Status: {r.status_code}")
         logger.info(f"-> Full Response Text: {r.text}")
-        
         if r.status_code == 200:
             result = r.json()
             logger.info(f"-> Response JSON: {json.dumps(result, indent=2)}")
@@ -129,11 +123,8 @@ def send_email(name, email, amount, payment_id, report_type, assessment_link, pa
     msg['From'] = f"{FROM_NAME} <{SMTP_EMAIL}>"
     msg['To'] = email
     msg['Reply-To'] = REPLY_TO_EMAIL
-    
-    # Use product name if available, otherwise use report type
     display_product = product_name if product_name else f"{report_type} Assessment"
     msg['Subject'] = f"Your {display_product} is Ready!"
-    
     html = f"""<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:30px auto;padding:20px;background:#f9f9f9;border-radius:10px;"><h2 style="color:#2c3e50;text-align:center;">Payment Confirmed!</h2><p>Dear <strong>{name}</strong>,</p><p>Thank you for purchasing:</p><h3 style="background:#e3f2fd;padding:15px;border-radius:8px;text-align:center;">{display_product}</h3><p><strong>Amount Paid:</strong> ₹{amount:,.2f}<br><strong>Payment ID:</strong> {payment_id}</p><h3>Your Assessment Access</h3><p style="margin-bottom:10px;"><strong>Login Email:</strong> {email}</p><p style="margin-top:10px;margin-bottom:20px;"><strong>Password:</strong> <code style="background:#eee;padding:8px;font-size:15px;">{password}</code></p><div style="text-align:center;margin:30px 0;"><a href="{assessment_link}" style="background:#1976d2;color:white;padding:16px 32px;text-decoration:none;border-radius:8px;font-size:18px;">Start Your Assessment Now</a></div><p style="background:#fff3cd;padding:15px;border-radius:8px;">This link is unique to you. Keep this email safe.</p><p style="font-size:12px;color:#777;text-align:center;">Need help? Reply to this email.<br>Bodhi Training Solutions | www.bodhih.com</p></body></html>"""
     msg.set_content("HTML email required.")
     msg.add_alternative(html, subtype='html')
@@ -153,7 +144,6 @@ def process_single_user(name, display_name, email, user_email, gender, product_n
     assessment_link = register_on_harrason(name, display_name, email, gender, report_type) if ('harrason' in product_type or 'harrason' in product_name.lower()) else register_on_disc_asia(name, display_name, email, gender, report_type)
     if assessment_link:
         password = generate_password()
-        # Pass product_name to email so it shows the actual product purchased
         send_email(name, user_email, amount, payment_id, report_type, assessment_link, password, product_name=product_name)
         logger.info(f"[OK] {name}: Account Created + Email Sent (Product: {product_name}, Report Type: {report_type})")
 
@@ -161,48 +151,37 @@ def handler(request):
     logger.info("=" * 80)
     logger.info("WEBHOOK HANDLER CALLED")
     logger.info("=" * 80)
-    
     try:
         method = getattr(request, 'method', 'POST')
         if method == 'OPTIONS':
             return {'statusCode': 200, 'headers': {'Content-Type': 'text/plain'}, 'body': 'ok'}
         if method == 'GET':
             return {'statusCode': 200, 'headers': {'Content-Type': 'application/json'}, 'body': json.dumps({"status": "webhook_endpoint_active", "method": "GET"})}
-        
         body = getattr(request, 'body', getattr(request, 'data', b'')) or b''
         data = json.loads(body.decode('utf-8') if isinstance(body, bytes) else str(body)) if body else {}
-        
-        # Accept both payment.captured and order.paid events
         event_type = data.get('event', '')
         if not data or event_type not in ['payment.captured', 'order.paid']:
             logger.info(f"[SKIP] Event is '{event_type}' - only processing 'payment.captured' or 'order.paid' events")
             return {'statusCode': 200, 'headers': {'Content-Type': 'text/plain'}, 'body': 'ok'}
-        
-        # Extract payment entity from payload
         if 'payload' in data and 'payment' in data['payload'] and 'entity' in data['payload']['payment']:
             p = data['payload']['payment']['entity']
             logger.info(f"[OK] Processing event: {event_type}")
         else:
             logger.info(f"[SKIP] Payment entity not found in payload for event: {event_type}")
             return {'statusCode': 200, 'headers': {'Content-Type': 'text/plain'}, 'body': 'ok'}
-        
-        # Verify payment is captured
         if p.get('status') != 'captured' or not p.get('captured', False):
             logger.info(f"[SKIP] Payment not captured - status: {p.get('status')}, captured: {p.get('captured')}")
             return {'statusCode': 200, 'headers': {'Content-Type': 'text/plain'}, 'body': 'ok'}
         notes = p.get('notes', {})
         description = p.get('description', '')
         amount = p['amount'] / 100
-        
         odoo_order_identifier = None
         if description:
             so_match = re.search(r'SO-[\d-]+', description, re.IGNORECASE)
             odoo_order_identifier = so_match.group(0) if so_match else (description.strip() if description.strip().isdigit() else None)
         if isinstance(notes, dict) and not odoo_order_identifier:
             odoo_order_identifier = notes.get('sale_order_id') or notes.get('order_id') or notes.get('odoo_order_id')
-        
         odoo_order_info = get_odoo_products_by_order_id(odoo_order_identifier) if odoo_order_identifier else None
-        
         if odoo_order_info and odoo_order_info.get('products'):
             products = odoo_order_info['products']
             if isinstance(notes, list) and len(notes) > 0:
@@ -213,9 +192,7 @@ def handler(request):
                         user_email = user_data.get('user_email', email)
                         gender = user_data.get('gender', 'Male')
                         product = products[idx] if idx < len(products) else products[0]
-                        # Get product name - prefer product_name, then line_name, avoid order ID
                         product_name = product.get('product_name') or product.get('line_name') or 'Assessment Report'
-                        # Don't use order ID as product name
                         if product_name.startswith('SO-'):
                             product_name = product.get('line_name') or 'Assessment Report'
                         product_type = determine_product_type_from_odoo(product.get('product_name', ''), product.get('line_name', ''))
@@ -229,9 +206,7 @@ def handler(request):
                 user_email = (notes.get('user_email') if isinstance(notes, dict) else None) or email
                 gender = notes.get('gender', 'Male') if isinstance(notes, dict) else 'Male'
                 for product in products:
-                    # Get product name - prefer product_name, then line_name, avoid order ID
                     product_name = product.get('product_name') or product.get('line_name') or 'Assessment Report'
-                    # Don't use order ID as product name
                     if product_name.startswith('SO-'):
                         product_name = product.get('line_name') or 'Assessment Report'
                     product_type = determine_product_type_from_odoo(product.get('product_name', ''), product.get('line_name', ''))
@@ -248,7 +223,6 @@ def handler(request):
                         user_email = user_data.get('user_email', email)
                         gender = user_data.get('gender', 'Male')
                         user_product_name = user_data.get('product_name', 'Assessment Report')
-                        # Don't use order ID as product name
                         if user_product_name.startswith('SO-'):
                             user_product_name = 'Assessment Report'
                         product_type = user_data.get('product_type', '').lower()
@@ -262,7 +236,6 @@ def handler(request):
                 user_email = (notes.get('user_email') if isinstance(notes, dict) else None) or email
                 gender = notes.get('gender', 'Male') if isinstance(notes, dict) else 'Male'
                 product_type = (notes.get('product_type', '') if isinstance(notes, dict) else '').lower()
-                # Don't use order ID as product name - use default instead
                 product_name = 'Assessment Report' if description.startswith('SO-') else (description or 'Assessment Report')
                 report_type = extract_report_type(product_name)
                 logger.info(f"Customer Name  : {name}")
@@ -270,11 +243,9 @@ def handler(request):
                 logger.info(f"Product Name   : {product_name or '—'}")
                 logger.info(f"Report Type    : {report_type}")
                 process_single_user(name, name, email, user_email, gender, product_name, product_type, report_type, amount, p['id'], description)
-        
         return {'statusCode': 200, 'headers': {'Content-Type': 'text/plain'}, 'body': 'OK'}
     except Exception as e:
         logger.error(f"ERROR: {type(e).__name__}: {e}")
         import traceback
         logger.error(traceback.format_exc())
         return {'statusCode': 500, 'headers': {'Content-Type': 'text/plain'}, 'body': f'Error: {str(e)}'}
-
