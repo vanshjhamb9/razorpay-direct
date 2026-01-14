@@ -21,10 +21,12 @@ def test_email():
     print("="*60 + "\n")
     
     # Test email
+    # Note: amount should be in rupees (not paise)
+    # Razorpay sends amount in paise, so webhook converts: amount = p['amount'] / 100
     result = send_email(
         name="Test User",
         email="vanshjhamb9@gmail.com",  # Your test email
-        amount=118,
+        amount=1.18,  # ₹1.18 (not 118 paise)
         payment_id="test_pay_123",
         report_type="Communication",
         assessment_link="https://discasiaplus.org/test",

@@ -17,6 +17,14 @@ import xmlrpc.client
 import socket
 from datetime import datetime
 
+# Load environment variables from .env for local development/testing
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    # Safe to ignore if python-dotenv is not installed in some environments
+    pass
+
 app = Flask(__name__)
 
 # Configure logging - ensure it goes to stdout
@@ -52,6 +60,10 @@ SMTP_SERVER        = os.environ.get("SMTP_SERVER", "mail.bodhih.com")
 SMTP_PORT          = int(os.environ.get("SMTP_PORT", "465"))
 FROM_NAME          = os.environ.get("FROM_NAME", "Bodhi Training Solutions")
 REPLY_TO_EMAIL     = os.environ.get("REPLY_TO_EMAIL", "info@inowix.in")
+
+# SendGrid requires verified sender - use assessments@bodhih.com (verified in SendGrid)
+# For SendGrid, always use the verified email address, not SMTP_EMAIL which might be different
+SENDGRID_FROM_EMAIL = os.environ.get("SENDGRID_FROM_EMAIL", "assessments@bodhih.com")
 
 RAZORPAY_KEY_ID    = os.environ.get("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
@@ -562,11 +574,19 @@ def register_on_harrason(name, display_name, email, gender, report_type):
 
 def send_email(name, email, amount, payment_id, report_type, assessment_link, password, product_name=None):
     location = "main.py:send_email"
+    
+    # Convert amount from paise to rupees if needed (Razorpay sends in paise)
+    # If amount > 100, assume it's in paise and convert
+    if amount > 100:
+        amount = amount / 100
+        write_debug_log(location, "Amount converted from paise to rupees", {"original": amount * 100, "converted": amount}, "A")
+    
     write_debug_log(location, "send_email called", {
         "to": email,
         "smtp_server": SMTP_SERVER,
         "smtp_port": SMTP_PORT,
-        "smtp_email": SMTP_EMAIL
+        "smtp_email": SMTP_EMAIL,
+        "amount_rupees": amount
     }, "A")
     
     msg = EmailMessage()
@@ -709,35 +729,73 @@ def send_email(name, email, amount, payment_id, report_type, assessment_link, pa
         }, "A")
         
         # Fallback to SendGrid if SMTP fails (for Render free tier)
+        # Try SendGrid if API key is available and SMTP failed for any reason
         sendgrid_api_key = os.environ.get("SENDGRID_API_KEY", "")
-        if sendgrid_api_key and ("unreachable" in error_msg.lower() or "timeout" in error_msg.lower() or "network" in error_msg.lower()):
-            logging.info("-> SMTP blocked, trying SendGrid API...")
+        if sendgrid_api_key:
+            logging.info("-> SMTP failed, trying SendGrid API fallback...")
+            write_debug_log(location, "Attempting SendGrid fallback", {
+                "smtp_error": error_msg,
+                "error_type": error_type,
+                "has_api_key": True
+            }, "G")
             try:
                 from sendgrid import SendGridAPIClient
                 from sendgrid.helpers.mail import Mail
                 
+                # Use string format for from_email (SendGrid supports both tuple and string)
+                # Format: "Name <email@domain.com>" or just "email@domain.com"
+                # IMPORTANT: Use SENDGRID_FROM_EMAIL which must be verified in SendGrid dashboard
+                from_email_str = f"{FROM_NAME} <{SENDGRID_FROM_EMAIL}>"
+                
+                write_debug_log(location, "Creating SendGrid Mail object", {
+                    "from_email": from_email_str,
+                    "to_email": email,
+                    "subject": f"Your {display_product} is Ready!"
+                }, "G")
+                
                 message = Mail(
-                    from_email=(SMTP_EMAIL, FROM_NAME),
+                    from_email=from_email_str,
                     to_emails=email,
                     subject=f"Your {display_product} is Ready!",
                     html_content=html
                 )
                 message.reply_to = REPLY_TO_EMAIL
                 
+                write_debug_log(location, "Sending via SendGrid API", {}, "G")
                 sg = SendGridAPIClient(sendgrid_api_key)
                 response = sg.send(message)
                 
+                write_debug_log(location, "SendGrid API response received", {
+                    "status_code": response.status_code,
+                    "headers": dict(response.headers) if hasattr(response, 'headers') else None
+                }, "G")
+                
                 if response.status_code in [200, 202]:
                     logging.info(f"EMAIL SENT via SendGrid -> {email} (Product: {display_product})")
-                    write_debug_log(location, "Email sent via SendGrid", {"status_code": response.status_code}, "A")
+                    write_debug_log(location, "Email sent via SendGrid", {"status_code": response.status_code}, "G")
                     return True
                 else:
-                    logging.error(f"SendGrid failed: {response.status_code} - {response.body}")
-                    write_debug_log(location, "SendGrid failed", {"status_code": response.status_code}, "A")
+                    error_body = ""
+                    if hasattr(response, 'body'):
+                        error_body = str(response.body)[:500]  # Limit length
+                    logging.error(f"SendGrid failed: {response.status_code} - {error_body}")
+                    write_debug_log(location, "SendGrid failed", {
+                        "status_code": response.status_code,
+                        "body": error_body
+                    }, "G")
             except ImportError:
                 logging.warning("-> SendGrid not installed. Install with: pip install sendgrid")
+                write_debug_log(location, "SendGrid import failed", {}, "G")
             except Exception as sg_error:
+                error_detail = str(sg_error)
                 logging.error(f"SendGrid error: {sg_error}")
+                import traceback
+                logging.error(f"SendGrid traceback: {traceback.format_exc()}")
+                write_debug_log(location, "SendGrid exception", {
+                    "error": error_detail,
+                    "error_type": type(sg_error).__name__,
+                    "traceback": traceback.format_exc()[:1000]  # Limit length
+                }, "G")
         
         write_debug_log(location, "Email sending failed", {
             "error": error_msg,
